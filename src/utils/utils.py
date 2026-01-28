@@ -1,0 +1,36 @@
+from decimal import Decimal
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from src.models.cards import CardListing
+
+
+def deduplicate_listings(listings: list["CardListing"]) -> list["CardListing"]:
+    seen: set[tuple[str, str, str]] = set()
+    unique: list["CardListing"] = []
+
+    for listing in listings:
+        key = (listing.code, listing.condition, listing.price)
+        if key not in seen:
+            seen.add(key)
+            unique.append(listing)
+
+    return unique
+
+
+def sort_listings(listings: list["CardListing"]) -> list["CardListing"]:
+    return sorted(
+        listings,
+        key=lambda x: (x.name.lower(), -extract_price_value(x.price)),
+        reverse=True,  # ascending order
+    )
+
+
+def extract_price_value(price_str: str) -> float:
+    if price_str == "N/A":
+        return 0.0
+    try:
+        return Decimal(price_str.replace("$", "").replace(",", ""))
+    except ValueError:
+        return Decimal(0)

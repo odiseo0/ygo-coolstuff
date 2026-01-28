@@ -1,0 +1,20 @@
+[project]
+name = "coolstuffscrape"
+version = "0.1.0"
+description = "Default template for PDM package"
+authors = [
+    {name = "Pedro", email = "87550035+odiseo0@users.noreply.github.com"},
+]
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "httpx>=0.28.1",
+    "aiofiles>=25.1.0",
+    "rich>=14.3.1",
+]
+requires-python = "==3.13.*"
+readme = "README.md"
+license = {text = "MIT"}
+
+
+[tool.pdm]
+distribution = false
