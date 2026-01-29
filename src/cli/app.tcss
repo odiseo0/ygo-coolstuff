@@ -1,0 +1,226 @@
+Screen {
+    background: #000000;
+    color: #ffffff;
+}
+
+#app-root {
+    height: 100%;
+    layout: vertical;
+}
+
+#title-bar {
+    height: 1;
+    padding: 0 1;
+    border-bottom: solid #2a2a2a;
+    align: center middle;
+    width: 100%;
+}
+
+#title-left {
+    text-style: bold;
+}
+
+#title-right {
+    color: #9aa0a6;
+    text-align: right;
+    width: 1fr;
+}
+
+#content {
+    height: 1fr;
+    padding: 0 1;
+    align: left top;
+    border-bottom: solid #2a2a2a;
+    layout: vertical;
+}
+
+.screen {
+    width: 100%;
+    height: 100%;
+    layout: vertical;
+    align: left top;
+}
+
+#home-screen {
+    align: left top;
+}
+
+#home-panel {
+    width: 100%;
+    height: auto;
+}
+
+.panel {
+    border: solid #2a2a2a;
+    padding: 1 1;
+}
+
+.panel-title {
+    color: #9aa0a6;
+    margin-bottom: 1;
+}
+
+.ascii {
+    color: #d7d7d7;
+    margin-bottom: 1;
+}
+
+.columns {
+    layout: horizontal;
+    width: 100%;
+    height: auto;
+}
+
+.column-panel {
+    width: 1fr;
+}
+
+.column-panel-left {
+    margin-right: 1;
+}
+
+.list-item {
+    padding: 0 1;
+}
+
+.muted {
+    color: #9aa0a6;
+}
+
+.spacer {
+    height: 1;
+}
+
+.split {
+    layout: horizontal;
+    height: 100%;
+}
+
+.split-collection {
+    layout: horizontal;
+}
+
+.split-equal {
+    layout: horizontal;
+}
+
+.split-panel-left {
+    margin-right: 1;
+}
+
+#search-main {
+    width: 2fr;
+    height: 100%;
+    layout: vertical;
+}
+
+#search-side {
+    width: 1fr;
+    height: 100%;
+    layout: vertical;
+}
+
+#search-input {
+    height: 3;
+    padding: 0 1;
+    border: solid #2a2a2a;
+    background: #0b0b0b;
+    color: #ffffff;
+}
+
+#results-table {
+    height: 1fr;
+    width: 100%;
+    min-height: 10;
+    overflow: auto;
+}
+
+DataTable {
+    border: solid #2a2a2a;
+    background: #000000;
+    color: #ffffff;
+}
+
+DataTable > .datatable--header {
+    color: #9aa0a6;
+}
+
+DataTable > .datatable--cursor {
+    background: #1f1f1f;
+}
+
+#collections-list {
+    width: 1fr;
+}
+
+#collections-detail {
+    width: 2fr;
+}
+
+#import-list,
+#import-preview {
+    width: 1fr;
+}
+
+.table {
+    border: solid #2a2a2a;
+    padding: 0 1;
+}
+
+.table-header {
+    color: #9aa0a6;
+    text-style: bold;
+    height: 1;
+}
+
+.table-row {
+    height: 1;
+    padding: 0 1;
+}
+
+.row-selected {
+    background: #1f1f1f;
+}
+
+.row-added {
+    background: #114a24;
+    color: #e7f6eb;
+}
+
+.is-hidden {
+    display: none;
+}
+
+#status-bar {
+    height: 1;
+    padding: 0 1;
+    align: center middle;
+    width: 100%;
+    background: #0b0b0b;
+}
+
+TitleBar {
+    height: 1;
+}
+
+StatusBar {
+    height: 1;
+}
+
+#status-left {
+    width: 12;
+    text-style: bold;
+}
+
+#status-center {
+    width: 1fr;
+    text-align: center;
+    text-wrap: nowrap;
+}
+
+#status-right {
+    width: 32;
+    text-align: right;
+    color: #9aa0a6;
+    text-wrap: nowrap;
+}

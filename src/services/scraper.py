@@ -4,15 +4,7 @@ from urllib.parse import quote
 
 from bs4 import BeautifulSoup
 from httpx import AsyncClient, HTTPStatusError, RequestError
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TaskProgressColumn,
-    TextColumn,
-)
 
-from src.cli.console import console
 from src.models.cards import CardListing
 from src.utils.constants import BASE_URL, REQUEST_TIMEOUT_SECONDS, USER_AGENT
 from src.utils.utils import deduplicate_listings
@@ -20,7 +12,6 @@ from src.utils.utils import deduplicate_listings
 
 async def scrape_cards(cards: list[str]) -> list[CardListing]:
     all_listings: list[CardListing] = []
-    total_cards = len(cards)
 
     async with AsyncClient(
         headers={"User-Agent": USER_AGENT},
@@ -30,39 +21,19 @@ async def scrape_cards(cards: list[str]) -> list[CardListing]:
         tasks: list[asyncio.Task] = []
         card_names: list[str] = []
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-        ) as progress:
-            task_id = progress.add_task("[cyan]Fetching cards...", total=total_cards)
+        for card_name in cards:
+            encoded_name = quote(card_name, safe="").replace("%20", "+")
+            url = f"{BASE_URL}{encoded_name}"
+            task = asyncio.create_task(fetch_card_page(client, url))
+            tasks.append(task)
+            card_names.append(card_name)
 
-            for _, card_name in enumerate(cards, start=1):
-                encoded_name = quote(card_name, safe="").replace("%20", "+")
-                url = f"{BASE_URL}{encoded_name}"
-                task = asyncio.create_task(fetch_card_page(client, url))
-                tasks.append(task)
-                card_names.append(card_name)
+        htmls = await asyncio.gather(*tasks)
 
-            htmls = await asyncio.gather(*tasks)
-
-            for card_name, html in zip(card_names, htmls):
-                if html:
-                    listings = parse_card_listings(html, card_name)
-                    all_listings.extend(listings)
-                    progress.update(
-                        task_id,
-                        description=f"[green]Found {len(listings)} listings for {card_name}",
-                        advance=1,
-                    )
-                else:
-                    progress.update(
-                        task_id,
-                        description=f"[red]Failed to fetch {card_name}",
-                        advance=1,
-                    )
+        for card_name, html in zip(card_names, htmls):
+            if html:
+                listings = parse_card_listings(html, card_name)
+                all_listings.extend(listings)
 
     return all_listings
 
@@ -96,6 +67,13 @@ def parse_listings_from_text(soup: BeautifulSoup, card_name: str) -> list[CardLi
         if price_match:
             price = f"${price_match.group(1)}"
 
+        stock = 0
+        stock_match = re.search(
+            r"(?:Only\s+)?(\d+)\s+In Stock", section[section.find(code) :]
+        )
+        if stock_match:
+            stock = int(stock_match.group(1))
+
         condition = "Unknown"
         condition_section = section[section.find(code) :]
         if "Near Mint" in condition_section[:100]:
@@ -111,6 +89,7 @@ def parse_listings_from_text(soup: BeautifulSoup, card_name: str) -> list[CardLi
                     price=price,
                     rarity=rarity,
                     condition=condition,
+                    stock=stock,
                 )
             )
 
@@ -144,17 +123,28 @@ def extract_listing_from_row(row, card_name: str) -> CardListing | None:
     elif "Played" in row_text:
         condition = "Played"
 
+    stock = 0
+    stock_match = re.search(r"(?:Only\s+)?(\d+)\s+In Stock", row_text)
+    if stock_match:
+        stock = int(stock_match.group(1))
+
     price = "N/A"
     price_match = re.search(r"\$\s*(\d+\.?\d*)", row_text)
     if price_match:
         price = f"${price_match.group(1)}"
 
+    set_name = ""
+    set_link = row.select_one("a.ItemSet.display-title")
+    if set_link is not None:
+        set_name = set_link.get_text(strip=True)
+
     return CardListing(
-        name=card_name,
+        name=f"{card_name} - {set_name}",
         code=code,
         price=price,
         rarity=rarity,
         condition=condition,
+        stock=stock,
     )
 
 
@@ -162,6 +152,7 @@ def parse_card_listings(html: str, card_name: str) -> list[CardListing]:
     soup = BeautifulSoup(html, "html.parser")
     listings: list[CardListing] = []
 
+    page_card_name = extract_page_card_name(soup, card_name)
     product_rows = soup.select("div.products-container div.row")
 
     if not product_rows:
@@ -172,16 +163,28 @@ def parse_card_listings(html: str, card_name: str) -> list[CardListing]:
 
     for row in product_rows:
         try:
-            listing = extract_listing_from_row(row, card_name)
+            listing = extract_listing_from_row(row, page_card_name)
             if listing:
                 listings.append(listing)
         except Exception:
             continue
 
     if not listings:
-        listings = parse_listings_from_text(soup, card_name)
+        listings = parse_listings_from_text(soup, page_card_name)
 
     return deduplicate_listings(listings)
+
+
+def extract_page_card_name(soup: BeautifulSoup, default_name: str) -> str:
+    header = soup.find("h1", class_="card-name")
+    if header is None:
+        return default_name
+
+    page_name = header.get_text(strip=True)
+    if not page_name:
+        return default_name
+
+    return page_name
 
 
 async def fetch_card_page(client: AsyncClient, url: str) -> str | None:
