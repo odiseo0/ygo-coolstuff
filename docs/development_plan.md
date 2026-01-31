@@ -19,10 +19,7 @@
 
 ## Requirements
 - Python 3.13
-- Existing deps: `rich`, `textual`, `httpx`, `beautifulsoup4`, `aiofiles`
-- New deps:
-  - `aiosqlite` for async DB access (pending)
-  - `openpyxl` for Excel template export (deferred)
+- Existing deps: `rich`, `textual`, `httpx`, `beautifulsoup4`, `aiofiles`, `aiosqlite`, `openpyxl`
 
 ## Architecture Plan
 - **UI Layer (Textual)**
