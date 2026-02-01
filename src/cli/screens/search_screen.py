@@ -1,10 +1,10 @@
-from textual import events
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
-from textual.message import Message
-from textual.widgets import DataTable, Input, Static
+from textual.widgets import Input, Static
 from textual.widgets.data_table import CellDoesNotExist, RowDoesNotExist
 
+from src.cli.ui.messages import SearchSubmitted
+from src.cli.widgets.results_table import ResultsTable
 from src.models.cards import CardListing
 from src.usecases.collections import (
     add_items,
@@ -12,25 +12,13 @@ from src.usecases.collections import (
     is_in_collection,
     make_collection_items_from_listings,
 )
-from src.usecases.search_cards import search_cards
-
-
-class ResultsTable(DataTable):
-    class ToggleRequested(Message):
-        pass
-
-    def on_key(self, event: events.Key) -> None:
-        if event.key in {" ", "space"}:
-            self.post_message(self.ToggleRequested())
-            event.stop()
 
 
 class SearchScreen(Container):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._row_to_listing: dict[str, "CardListing"] = {}
+        self._row_to_listing: dict[str, CardListing] = {}
         self._selected_row_keys: set[str] = set()
-        self._column_keys: dict[str, str] = {}
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="split", id="search-split"):
@@ -62,39 +50,17 @@ class SearchScreen(Container):
         table.add_column("Condition", width=12)
         table.add_column("Stock", width=12)
 
-    def on_results_table_toggle_requested(
-        self, message: ResultsTable.ToggleRequested
-    ) -> None:
-        root_screen = self.screen
-        if isinstance(root_screen, RootScreen):
-            root_screen.action_toggle_select()
-
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id != "search-input":
             return
-
-        query = event.input.value
-        root_screen = self.screen
-        if not isinstance(root_screen, RootScreen):
-            return
-
-        root_screen.mode = "NAV"
-        root_screen.hints = "Searching..."
-        root_screen._update_status()
-
-        listings = await search_cards(query)
-
-        self._render_results(listings)
-
-        if listings:
-            root_screen.hints = f"Found {len(listings)} listings"
-        else:
-            root_screen.hints = "No results"
-        root_screen._update_status()
-
+        query = event.input.value.strip()
+        self.post_message(SearchSubmitted(query))
         event.input.blur()
 
-    def _render_results(self, listings: list["CardListing"]) -> None:
+    def render_results(self, listings: list[CardListing]) -> None:
+        self._render_results(listings)
+
+    def _render_results(self, listings: list[CardListing]) -> None:
         table = self.query_one("#results-table", ResultsTable)
         table.clear(columns=False)
         self._row_to_listing.clear()
@@ -134,7 +100,7 @@ class SearchScreen(Container):
             table.move_cursor(row=0, column=0, scroll=True)
         self._render_working_collection()
 
-    def _make_row_key(self, listing: "CardListing") -> str:
+    def _make_row_key(self, listing: CardListing) -> str:
         return f"{listing.code}:{listing.condition}"
 
     def _normalize_row_key(self, raw_key: object) -> str:
@@ -145,7 +111,7 @@ class SearchScreen(Container):
             return value
         return str(raw_key)
 
-    def _format_display_name(self, row_key: str, listing: "CardListing") -> str:
+    def _format_display_name(self, row_key: str, listing: CardListing) -> str:
         prefix = ""
         if is_in_collection(self._make_row_key(listing)):
             prefix += "✓ "
@@ -153,7 +119,7 @@ class SearchScreen(Container):
             prefix += "> "
         return f"{prefix}{listing.name}"
 
-    def _update_row_display(self, row_key: str, listing: "CardListing") -> None:
+    def _update_row_display(self, row_key: str, listing: CardListing) -> None:
         table = self.query_one("#results-table", ResultsTable)
         display_name = self._format_display_name(row_key, listing)
         try:
@@ -218,7 +184,7 @@ class SearchScreen(Container):
         if not self._selected_row_keys:
             return 0
 
-        listings: list["CardListing"] = []
+        listings: list[CardListing] = []
         for row_key in self._selected_row_keys:
             listing = self._row_to_listing.get(row_key)
             if listing is not None:

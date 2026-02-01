@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 
-@dataclass(init=False)
+@dataclass
 class CardListing:
     name: str
     code: str
@@ -11,7 +11,7 @@ class CardListing:
     stock: int = 0
 
 
-@dataclass(init=False)
+@dataclass
 class CollectionItem:
     name: str
     code: str
