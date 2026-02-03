@@ -1,6 +1,13 @@
 from dataclasses import dataclass
 
-from src.models.cards import CardListing, CollectionItem
+from src.models.cards import CardListing
+from src.models.db_models import Collection, CollectionItem
+from src.models.db_models import create_collection as create_collection_db
+from src.models.db_models import create_collection_item as create_collection_item_db
+from src.models.db_models import delete_collection as delete_collection_db
+from src.models.db_models import delete_collection_item as delete_collection_item_db
+from src.models.db_models import update_collection as update_collection_db
+from src.models.db_models import update_collection_item as update_collection_item_db
 
 
 @dataclass
@@ -129,3 +136,28 @@ def make_collection_items_from_listings(
         )
         for listing in listings
     ]
+
+
+async def create_collection(name: str) -> Collection:
+    items = get_working_collection()
+    return await create_collection_db(name, items)
+
+
+async def update_collection(collection: Collection) -> Collection:
+    return await update_collection_db(collection)
+
+
+async def delete_collection(collection_id: int) -> None:
+    return await delete_collection_db(collection_id)
+
+
+async def create_collection_item(collection_item: CollectionItem) -> CollectionItem:
+    return await create_collection_item_db(collection_item)
+
+
+async def update_collection_item(collection_item: CollectionItem) -> CollectionItem:
+    return await update_collection_item_db(collection_item)
+
+
+async def delete_collection_item(collection_item_id: int) -> None:
+    return await delete_collection_item_db(collection_item_id)

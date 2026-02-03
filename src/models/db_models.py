@@ -8,16 +8,15 @@ from aiosqlite.core import Connection
 
 @dataclass(init=False)
 class CollectionItem:
-    id: int
+    id: int | None = None
     collection_id: int
-    card_id: int  # yugioh card id
+    card_id: int | None = None  # yugioh card id
     card_name: str
     card_set: str
     card_code: str
     card_price: str
     card_rarity: str
     card_condition: str
-    card_stock: int
     card_quantity: int
 
 
@@ -82,7 +81,7 @@ async def get_collection_items(collection_id: int) -> list[CollectionItem]:
 async def create_collection_item(collection_item: CollectionItem) -> CollectionItem:
     async with session() as db:
         await db.execute(
-            "INSERT INTO collection_items (collection_id, card_id, card_name, card_set, card_code, card_price, card_rarity, card_condition, card_stock, card_quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO collection_items (collection_id, card_id, card_name, card_set, card_code, card_price, card_rarity, card_condition, card_quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 collection_item.collection_id,
                 collection_item.card_id,
@@ -92,7 +91,6 @@ async def create_collection_item(collection_item: CollectionItem) -> CollectionI
                 collection_item.card_price,
                 collection_item.card_rarity,
                 collection_item.card_condition,
-                collection_item.card_stock,
                 collection_item.card_quantity,
             ),
         )
@@ -111,13 +109,30 @@ async def create_collection_item(collection_item: CollectionItem) -> CollectionI
             card_price=collection_item.card_price,
             card_rarity=collection_item.card_rarity,
             card_condition=collection_item.card_condition,
-            card_stock=collection_item.card_stock,
             card_quantity=collection_item.card_quantity,
         )
 
 
+async def update_collection_item(collection_item: CollectionItem) -> CollectionItem:
+    async with session() as db:
+        await db.execute(
+            "UPDATE collection_items SET card_quantity = ? WHERE id = ?",
+            (collection_item.card_quantity, collection_item.id),
+        )
+        await db.commit()
+        return collection_item
+
+
+async def delete_collection_item(collection_item_id: int) -> None:
+    async with session() as db:
+        await db.execute(
+            "DELETE FROM collection_items WHERE id = ?", (collection_item_id,)
+        )
+        await db.commit()
+
+
 async def create_many_collection_items(
-    items: list[CollectionItem],
+    collection_id: int, items: list[CollectionItem]
 ) -> list[CollectionItem]:
     async with session() as db:
         cursor = await db.execute("SELECT MAX(id) FROM collection_items")
@@ -126,7 +141,7 @@ async def create_many_collection_items(
             "INSERT INTO collection_items (collection_id, card_id, card_name, card_set, card_code, card_price, card_rarity, card_condition, card_stock, card_quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
-                    item.collection_id,
+                    collection_id,
                     item.card_id,
                     item.card_name,
                     item.card_set,
@@ -134,7 +149,6 @@ async def create_many_collection_items(
                     item.card_price,
                     item.card_rarity,
                     item.card_condition,
-                    item.card_stock,
                     item.card_quantity,
                 )
                 for item in items
@@ -157,7 +171,6 @@ async def create_many_collection_items(
                 card_price=row[6],
                 card_rarity=row[7],
                 card_condition=row[8],
-                card_stock=row[9],
                 card_quantity=row[10],
             )
             for row in rows
@@ -175,7 +188,7 @@ async def create_collection(name: str, items: list[CollectionItem]) -> Collectio
             last_id = await cursor.fetchone()
 
         if items:
-            new_items = await create_many_collection_items(items)
+            new_items = await create_many_collection_items(last_id[0], items)
 
         return Collection(id=last_id[0], name=name, items=new_items)
 

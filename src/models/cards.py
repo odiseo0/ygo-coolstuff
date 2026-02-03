@@ -4,6 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class CardListing:
     name: str
+    set: str
     code: str
     price: str
     rarity: str
@@ -14,6 +15,7 @@ class CardListing:
 @dataclass
 class CollectionItem:
     name: str
+    set: str
     code: str
     qty: int
     price: str

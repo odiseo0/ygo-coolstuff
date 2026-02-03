@@ -140,6 +140,7 @@ def extract_listing_from_row(row, card_name: str) -> CardListing | None:
 
     return CardListing(
         name=f"{card_name} - {set_name}",
+        set=set_name,
         code=code,
         price=price,
         rarity=rarity,
