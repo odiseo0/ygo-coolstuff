@@ -1,23 +1,27 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from aiosqlite import connect
 from aiosqlite.core import Connection
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_DB_PATH = _PROJECT_ROOT / "db" / "card_database.db"
 
-@dataclass(init=False)
+
+@dataclass
 class CollectionItem:
     id: int | None = None
-    collection_id: int
+    collection_id: int = 0
     card_id: int | None = None  # yugioh card id
-    card_name: str
-    card_set: str
-    card_code: str
-    card_price: str
-    card_rarity: str
-    card_condition: str
-    card_quantity: int
+    card_name: str = ""
+    card_set: str = ""
+    card_code: str = ""
+    card_price: str = ""
+    card_rarity: str = ""
+    card_condition: str = ""
+    card_quantity: int = 0
 
 
 @dataclass(init=False)
@@ -29,7 +33,7 @@ class Collection:
 
 @asynccontextmanager
 async def session() -> AsyncIterator[Connection]:
-    async with connect("db/card_database.db") as db:
+    async with connect(str(_DB_PATH)) as db:
         yield db
 
 
@@ -71,8 +75,7 @@ async def get_collection_items(collection_id: int) -> list[CollectionItem]:
                     card_price=row[6],
                     card_rarity=row[7],
                     card_condition=row[8],
-                    card_stock=row[9],
-                    card_quantity=row[10],
+                    card_quantity=row[9],
                 )
                 for row in rows
             ]
@@ -81,7 +84,7 @@ async def get_collection_items(collection_id: int) -> list[CollectionItem]:
 async def create_collection_item(collection_item: CollectionItem) -> CollectionItem:
     async with session() as db:
         await db.execute(
-            "INSERT INTO collection_items (collection_id, card_id, card_name, card_set, card_code, card_price, card_rarity, card_condition, card_quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO collection_items (collection_id, card_id, card_name, card_set, card_code, card_price, card_rarity, card_condition, quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 collection_item.collection_id,
                 collection_item.card_id,
@@ -116,7 +119,7 @@ async def create_collection_item(collection_item: CollectionItem) -> CollectionI
 async def update_collection_item(collection_item: CollectionItem) -> CollectionItem:
     async with session() as db:
         await db.execute(
-            "UPDATE collection_items SET card_quantity = ? WHERE id = ?",
+            "UPDATE collection_items SET quantity = ? WHERE id = ?",
             (collection_item.card_quantity, collection_item.id),
         )
         await db.commit()
@@ -131,6 +134,14 @@ async def delete_collection_item(collection_item_id: int) -> None:
         await db.commit()
 
 
+async def delete_collection_items_by_collection_id(collection_id: int) -> None:
+    async with session() as db:
+        await db.execute(
+            "DELETE FROM collection_items WHERE collection_id = ?", (collection_id,)
+        )
+        await db.commit()
+
+
 async def create_many_collection_items(
     collection_id: int, items: list[CollectionItem]
 ) -> list[CollectionItem]:
@@ -138,7 +149,7 @@ async def create_many_collection_items(
         cursor = await db.execute("SELECT MAX(id) FROM collection_items")
         old_max_id = await cursor.fetchone()
         await db.executemany(
-            "INSERT INTO collection_items (collection_id, card_id, card_name, card_set, card_code, card_price, card_rarity, card_condition, card_stock, card_quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO collection_items (collection_id, card_id, card_name, card_set, card_code, card_price, card_rarity, card_condition, quantity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     collection_id,
@@ -171,7 +182,7 @@ async def create_many_collection_items(
                 card_price=row[6],
                 card_rarity=row[7],
                 card_condition=row[8],
-                card_quantity=row[10],
+                card_quantity=row[9],
             )
             for row in rows
         ]

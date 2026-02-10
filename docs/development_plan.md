@@ -48,7 +48,7 @@
 - [x] Build results table with row selection and add‑to‑collection
 - [x] Add working collection panel (display + add + undo)
 - [x] Add DB dependency and basic repository layer
-- [ ] Create DB usecases (collections CRUD + items CRUD)
+- [x] Create DB usecases (collections CRUD + items CRUD)
 - [ ] Persist working collection to DB (save/load)
 - [ ] Wire DB models into collections screen (load list + details)
 - [ ] Implement quantity adjustments (+/-), remove, rename in working collection

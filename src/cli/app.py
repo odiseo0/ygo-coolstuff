@@ -1,13 +1,14 @@
 from pathlib import Path
 
-from textual import events
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Container, Vertical
 from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import Input
 
 from src.cli.screens import CollectionsScreen, HomeScreen, ImportScreen, SearchScreen
+from src.cli.screens.input_prompt_screen import InputPromptScreen
 from src.cli.ui.messages import (
     AddSelectedRequested,
     BackRequested,
@@ -19,7 +20,15 @@ from src.cli.ui.messages import (
 )
 from src.cli.ui.mode_state import ModeState
 from src.cli.widgets import StatusBar, TitleBar
-from src.usecases.collections import undo_last
+from src.usecases.collections import (
+    delete_collection,
+    get_working_collection_id,
+    get_working_collection_name,
+    rename_collection,
+    save_working_collection,
+    set_working_collection_name,
+    undo_last,
+)
 from src.usecases.search_cards import search_cards
 
 
@@ -27,16 +36,12 @@ CSS_FILE = Path(__file__).parent / "app.tcss"
 
 DEFAULT_HINTS = "s: search  i: import  c: collections  q: quit"
 SEARCH_HINTS = "Space: select  a: add  u: undo  i: image  /: search"
-SELECT_HINTS = (
-    "SELECT: Space: toggle  a: add  u: undo  i: image  /: search  Esc: back"
-)
+SELECT_HINTS = "SELECT: Space: toggle  a: add  u: undo  i: image  /: search  Esc: back"
 
 
 class RootScreen(Screen):
     can_focus = True
-    mode_state = reactive(
-        ModeState(mode="NAV", breadcrumb="Home", hints=DEFAULT_HINTS)
-    )
+    mode_state = reactive(ModeState(mode="NAV", breadcrumb="Home", hints=DEFAULT_HINTS))
 
     BINDINGS = [
         ("q", "quit", "Quit"),
@@ -48,7 +53,16 @@ class RootScreen(Screen):
         ("u", "undo", "Undo"),
         ("a", "add_selected", "Add to collection"),
         ("space", "toggle_select", "Select row"),
-        ("escape", "back", "Back"),
+        Binding("escape", "blur_or_back", "Blur/Back", priority=True),
+        Binding("ctrl+s", "save_working", "Save", priority=True),
+        Binding("plus", "qty_up", "Qty +", priority=True),
+        Binding("equals", "qty_up", "Qty +", priority=True),
+        Binding("shift+equals", "qty_up", "Qty +", priority=True),
+        Binding("minus", "qty_down", "Qty -", priority=True),
+        ("e", "rename_draft", "Rename draft"),
+        ("d", "remove_or_delete", "Remove/Delete"),
+        ("r", "rename_collection", "Rename collection"),
+        ("n", "new_collection", "New collection"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -80,9 +94,11 @@ class RootScreen(Screen):
         for target in self.query(".screen"):
             target.add_class("is-hidden")
         self.query_one(f"#{screen_id}").remove_class("is-hidden")
-        self._set_mode_state(
-            ModeState(mode="NAV", breadcrumb=breadcrumb, hints=hints)
-        )
+        if screen_id == "search-screen":
+            self.query_one(
+                "#search-screen", SearchScreen
+            ).update_working_collection_name()
+        self._set_mode_state(ModeState(mode="NAV", breadcrumb=breadcrumb, hints=hints))
 
     def on_navigate_requested(self, message: NavigateRequested) -> None:
         if message.screen_id == "search-screen":
@@ -183,43 +199,99 @@ class RootScreen(Screen):
     def on_back_requested(self, _: BackRequested) -> None:
         self.action_back()
 
-    def on_key(self, event: events.Key) -> None:
-        if self.mode_state.mode == "INSERT" and event.key != "escape":
+    def action_blur_or_back(self) -> None:
+        focused = self.app.focused
+        search_input = self.query_one("#search-input", Input)
+        if (
+            not self.query_one("#search-screen", SearchScreen).has_class("is-hidden")
+            and focused is search_input
+        ):
+            search_input.blur()
+            self._set_mode_state(
+                ModeState(
+                    mode="NAV",
+                    breadcrumb=self.mode_state.breadcrumb,
+                    hints=SEARCH_HINTS,
+                )
+            )
             return
-        if event.key == "s":
-            self.action_show_search()
-            event.stop()
-        elif event.key == "i":
-            self.action_show_import()
-            event.stop()
-        elif event.key == "c":
-            self.action_show_collections()
-            event.stop()
-        elif event.key == "a":
-            self.post_message(AddSelectedRequested())
-            event.stop()
-        elif event.key in {"space", " "}:
-            search_screen = self.query_one("#search-screen", SearchScreen)
-            if not search_screen.has_class("is-hidden"):
-                did_toggle = search_screen.toggle_current_row_selection()
-                if did_toggle:
-                    self._set_mode_state(
-                        ModeState(
-                            mode="SELECT",
-                            breadcrumb=self.mode_state.breadcrumb,
-                            hints=SELECT_HINTS,
-                        )
-                    )
-            event.stop()
-        elif event.key == "u":
-            self.post_message(UndoRequested())
-            event.stop()
-        elif event.key == "escape":
-            self.post_message(BackRequested())
-            event.stop()
-        elif event.key == "q":
-            self.action_quit()
-            event.stop()
+        self.post_message(BackRequested())
+
+    def action_save_working(self) -> None:
+        if self.query_one("#search-screen", SearchScreen).has_class("is-hidden"):
+            return
+        name = get_working_collection_name()
+        self.app.push_screen(
+            InputPromptScreen("Save collection as", initial=name),
+            self._on_save_collection_done,
+        )
+
+    def action_qty_up(self) -> None:
+        search_screen = self.query_one("#search-screen", SearchScreen)
+        if search_screen.has_class("is-hidden"):
+            return
+        if search_screen.adjust_selected_quantity(1):
+            search_screen.refresh_after_collection_change()
+        else:
+            self.notify("Select a working item to adjust.", severity="information")
+
+    def action_qty_down(self) -> None:
+        search_screen = self.query_one("#search-screen", SearchScreen)
+        if search_screen.has_class("is-hidden"):
+            return
+        if search_screen.adjust_selected_quantity(-1):
+            search_screen.refresh_after_collection_change()
+        else:
+            self.notify("Select a working item to adjust.", severity="information")
+
+    def action_rename_draft(self) -> None:
+        if self.query_one("#search-screen", SearchScreen).has_class("is-hidden"):
+            return
+        name = get_working_collection_name()
+        self.app.push_screen(
+            InputPromptScreen("Rename working collection", initial=name),
+            self._on_draft_rename_done,
+        )
+
+    def action_remove_or_delete(self) -> None:
+        collections_screen = self.query_one(
+            "#collections-screen", CollectionsScreen
+        )
+        search_screen = self.query_one("#search-screen", SearchScreen)
+        if not collections_screen.has_class("is-hidden"):
+            cid = collections_screen.get_selected_collection_id()
+            if cid is not None:
+                self.run_worker(self._do_delete_collection(cid), exclusive=False)
+            return
+        if not search_screen.has_class("is-hidden"):
+            if search_screen.remove_selected_item():
+                search_screen.refresh_after_collection_change()
+
+    def action_rename_collection(self) -> None:
+        collections_screen = self.query_one(
+            "#collections-screen", CollectionsScreen
+        )
+        if collections_screen.has_class("is-hidden"):
+            return
+        cid = collections_screen.get_selected_collection_id()
+        if cid is None:
+            return
+        name = collections_screen.get_selected_collection_name()
+        self.app.push_screen(
+            InputPromptScreen("Rename collection", initial=name),
+            lambda result: self._on_collection_rename_done(result, cid),
+        )
+
+    def action_new_collection(self) -> None:
+        if self.query_one("#collections-screen", CollectionsScreen).has_class(
+            "is-hidden"
+        ):
+            return
+        name = get_working_collection_name()
+        self.app.push_screen(
+            InputPromptScreen("New collection name", initial=name),
+            self._on_new_collection_done,
+        )
 
     def action_show_search(self) -> None:
         self._show_screen("search-screen", "Home > Search", SEARCH_HINTS)
@@ -237,6 +309,7 @@ class RootScreen(Screen):
             "Home > Collections",
             "Enter: load  n: new  r: rename  d: delete",
         )
+        self.query_one("#collections-option-list").focus()
 
     def action_focus_search(self) -> None:
         self.post_message(SearchInputFocused())
@@ -274,6 +347,54 @@ class RootScreen(Screen):
 
     def action_quit(self) -> None:
         self.app.exit()
+
+    def _on_draft_rename_done(self, result: str | None) -> None:
+        if result is None or not result.strip():
+            return
+        name = result.strip()
+        set_working_collection_name(name)
+        wid = get_working_collection_id()
+        if wid is not None:
+            self.run_worker(rename_collection(wid, name), exclusive=False)
+        search_screen = self.query_one("#search-screen", SearchScreen)
+        search_screen.update_working_collection_name()
+
+    def _on_collection_rename_done(
+        self, result: str | None, collection_id: int
+    ) -> None:
+        if result is None or not result.strip():
+            return
+        self.run_worker(
+            self._do_rename_collection(collection_id, result.strip()),
+            exclusive=False,
+        )
+
+    async def _do_rename_collection(self, collection_id: int, name: str) -> None:
+        await rename_collection(collection_id, name)
+        collections_screen = self.query_one("#collections-screen", CollectionsScreen)
+        await collections_screen.refresh_after_rename_or_delete(collection_id)
+
+    def _on_new_collection_done(self, result: str | None) -> None:
+        if result is None or not result.strip():
+            return
+        self.run_worker(self._do_save_new_collection(result.strip()), exclusive=False)
+
+    def _on_save_collection_done(self, result: str | None) -> None:
+        if result is None or not result.strip():
+            return
+        self.run_worker(self._do_save_new_collection(result.strip()), exclusive=False)
+
+    async def _do_save_new_collection(self, name: str) -> None:
+        await save_working_collection(name)
+        search_screen = self.query_one("#search-screen", SearchScreen)
+        search_screen.update_working_collection_name()
+        collections_screen = self.query_one("#collections-screen", CollectionsScreen)
+        await collections_screen.refresh_after_rename_or_delete()
+
+    async def _do_delete_collection(self, collection_id: int) -> None:
+        await delete_collection(collection_id)
+        collections_screen = self.query_one("#collections-screen", CollectionsScreen)
+        await collections_screen.refresh_after_rename_or_delete()
 
 
 class CardScraperApp(App):
