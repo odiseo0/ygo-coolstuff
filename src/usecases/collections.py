@@ -265,6 +265,15 @@ def set_working_collection_name(name: str) -> None:
     _WORKING_COLLECTION_NAME = name
 
 
+def start_new_collection(name: str = "Working draft") -> None:
+    """Clears the working draft and unlinks. No DB write; use Ctrl+S to save."""
+    global _WORKING_COLLECTION, _UNDO_STACK, _WORKING_COLLECTION_ID, _WORKING_COLLECTION_NAME
+    _WORKING_COLLECTION.clear()
+    _UNDO_STACK.clear()
+    _WORKING_COLLECTION_ID = None
+    _WORKING_COLLECTION_NAME = name
+
+
 def get_working_collection_id() -> int | None:
     return _WORKING_COLLECTION_ID
 
@@ -319,6 +328,25 @@ async def save_working_collection(name: str) -> Collection | None:
     return coll
 
 
+async def load_collection_into_working(
+    collection_id: int,
+) -> Collection | None:
+    """Loads collection from DB once, populates working draft, returns it for detail."""
+    coll = await get_collection_db(collection_id)
+    if coll is None:
+        return None
+
+    global _WORKING_COLLECTION, _WORKING_COLLECTION_ID, _WORKING_COLLECTION_NAME
+    _WORKING_COLLECTION.clear()
+    for db_item in coll.items:
+        cards_item = db_item_to_cards_item(db_item)
+        _WORKING_COLLECTION[cards_item.key] = cards_item
+    _WORKING_COLLECTION_ID = coll.id
+    _WORKING_COLLECTION_NAME = coll.name
+    _UNDO_STACK.clear()
+    return coll
+
+
 async def load_working_collection(collection_id: int) -> bool:
     global _WORKING_COLLECTION, _WORKING_COLLECTION_ID, _WORKING_COLLECTION_NAME
     coll = await load_collection(collection_id)
@@ -353,7 +381,13 @@ async def update_collection(collection: Collection) -> Collection:
 
 
 async def delete_collection(collection_id: int) -> None:
-    return await delete_collection_db(collection_id)
+    global _WORKING_COLLECTION_ID, _WORKING_COLLECTION_NAME
+    await delete_collection_items_by_collection_id_db(collection_id)
+    await delete_collection_db(collection_id)
+    if _WORKING_COLLECTION_ID == collection_id:
+        _WORKING_COLLECTION_ID = None
+        _WORKING_COLLECTION_NAME = "Working draft"
+        # Items remain in memory so user can save as new (n) if deletion was accidental
 
 
 async def create_collection_item(collection_item: DbCollectionItem) -> DbCollectionItem:

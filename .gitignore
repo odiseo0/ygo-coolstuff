@@ -61,6 +61,9 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# Local SQLite DB (avoid shipping dev DB state)
+db/*.db
+
 # Flask stuff:
 instance/
 .webassets-cache

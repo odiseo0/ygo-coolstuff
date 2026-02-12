@@ -6,6 +6,7 @@ from pathlib import Path
 from aiosqlite import connect
 from aiosqlite.core import Connection
 
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _DB_PATH = _PROJECT_ROOT / "db" / "card_database.db"
 
@@ -24,7 +25,7 @@ class CollectionItem:
     card_quantity: int = 0
 
 
-@dataclass(init=False)
+@dataclass(init=True)
 class Collection:
     id: int
     name: str
@@ -46,7 +47,7 @@ async def get_collection(collection_id: int) -> Collection | None:
             if not row:
                 return None
 
-            collection = Collection(id=row[0], name=row[1])
+            collection = Collection(row[0], row[1])
             collection.items = await get_collection_items(collection_id)
             return collection
 
@@ -55,7 +56,7 @@ async def get_collections() -> list[Collection]:
     async with session() as db:
         async with db.execute("SELECT * FROM collections") as cursor:
             rows = await cursor.fetchall()
-            return [Collection(id=row[0], name=row[1]) for row in rows]
+            return [Collection(row[0], row[1]) for row in rows]
 
 
 async def get_collection_items(collection_id: int) -> list[CollectionItem]:
@@ -66,16 +67,16 @@ async def get_collection_items(collection_id: int) -> list[CollectionItem]:
             rows = await cursor.fetchall()
             return [
                 CollectionItem(
-                    id=row[0],
-                    collection_id=row[1],
-                    card_id=row[2],
-                    card_name=row[3],
-                    card_set=row[4],
-                    card_code=row[5],
-                    card_price=row[6],
-                    card_rarity=row[7],
-                    card_condition=row[8],
-                    card_quantity=row[9],
+                    row[0],
+                    row[1],
+                    row[2],
+                    row[3],
+                    row[4],
+                    row[5],
+                    row[6],
+                    row[7],
+                    row[8],
+                    row[9],
                 )
                 for row in rows
             ]
@@ -103,16 +104,16 @@ async def create_collection_item(collection_item: CollectionItem) -> CollectionI
             last_id = await cursor.fetchone()
 
         return CollectionItem(
-            id=last_id[0],
-            collection_id=collection_item.collection_id,
-            card_id=collection_item.card_id,
-            card_name=collection_item.card_name,
-            card_set=collection_item.card_set,
-            card_code=collection_item.card_code,
-            card_price=collection_item.card_price,
-            card_rarity=collection_item.card_rarity,
-            card_condition=collection_item.card_condition,
-            card_quantity=collection_item.card_quantity,
+            last_id[0],
+            collection_item.collection_id,
+            collection_item.card_id,
+            collection_item.card_name,
+            collection_item.card_set,
+            collection_item.card_code,
+            collection_item.card_price,
+            collection_item.card_rarity,
+            collection_item.card_condition,
+            collection_item.card_quantity,
         )
 
 
@@ -166,23 +167,24 @@ async def create_many_collection_items(
             ],
         )
         await db.commit()
+        prev_max = old_max_id[0] if old_max_id and old_max_id[0] is not None else 0
         async with db.execute(
-            "SELECT * FROM collection_items WHERE id > ?", (old_max_id[0],)
+            "SELECT * FROM collection_items WHERE id > ?", (prev_max,)
         ) as cursor:
             rows = await cursor.fetchall()
 
         return [
             CollectionItem(
-                id=row[0],
-                collection_id=row[1],
-                card_id=row[2],
-                card_name=row[3],
-                card_set=row[4],
-                card_code=row[5],
-                card_price=row[6],
-                card_rarity=row[7],
-                card_condition=row[8],
-                card_quantity=row[9],
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                row[6],
+                row[7],
+                row[8],
+                row[9],
             )
             for row in rows
         ]
