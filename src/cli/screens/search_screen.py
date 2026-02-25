@@ -1,3 +1,4 @@
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
 from textual.widgets import Input, OptionList, Static
@@ -19,12 +20,20 @@ from src.usecases.collections import (
 )
 
 
+ADDED_HIGHLIGHT_TTL = 2.0
+ADDED_HIGHLIGHT_STYLE = "bold reverse green"
+
+RESULTS_TABLE_COLUMNS = ("Card Name", "Code", "Price", "Rarity", "Condition", "Stock")
+
+
 class SearchScreen(Container):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._row_to_listing: dict[str, CardListing] = {}
         self._selected_row_keys: set[str] = set()
         self._working_list_keys: list[str] = []
+        self._recently_added_row_keys: set[str] = set()
+        self._added_highlight_timer: object | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="split", id="search-split"):
@@ -74,6 +83,8 @@ class SearchScreen(Container):
         table.clear(columns=False)
         self._row_to_listing.clear()
         self._selected_row_keys.clear()
+        self._recently_added_row_keys.clear()
+        self._cancel_added_highlight_timer()
 
         if not listings:
             table.add_row("No results", "", "", "", "", "", key="__no-results__")
@@ -93,17 +104,8 @@ class SearchScreen(Container):
             used_row_keys.add(row_key)
             self._row_to_listing[row_key] = listing
 
-            display_name = self._format_display_name(row_key, listing)
-
-            table.add_row(
-                display_name,
-                listing.code,
-                listing.price,
-                listing.rarity,
-                listing.condition,
-                str(listing.stock),
-                key=row_key,
-            )
+            cells = self._row_cell_renderables(row_key, listing)
+            table.add_row(*cells, key=row_key)
 
         table.focus()
 
@@ -128,6 +130,7 @@ class SearchScreen(Container):
 
     def _format_display_name(self, row_key: str, listing: CardListing) -> str:
         prefix = ""
+
         if is_in_collection(self._make_row_key(listing)):
             prefix += "✓ "
 
@@ -136,14 +139,62 @@ class SearchScreen(Container):
 
         return f"{prefix}{listing.name}"
 
-    def _update_row_display(self, row_key: str, listing: CardListing) -> None:
+    def _row_cell_values(self, row_key: str, listing: CardListing) -> tuple[str, ...]:
+        return (
+            self._format_display_name(row_key, listing),
+            listing.code,
+            listing.price,
+            listing.rarity,
+            listing.condition,
+            str(listing.stock),
+        )
+
+    def _row_cell_renderables(
+        self, row_key: str, listing: CardListing
+    ) -> tuple[str | Text, ...]:
+        values = self._row_cell_values(row_key, listing)
+        highlighted = row_key in self._recently_added_row_keys
+
+        if not highlighted:
+            return values
+
+        return tuple(Text(str(v), style=ADDED_HIGHLIGHT_STYLE) for v in values)
+
+    def _update_row_cells(self, row_key: str, listing: CardListing) -> None:
         table = self.query_one("#results-table", ResultsTable)
-        display_name = self._format_display_name(row_key, listing)
+        renderables = self._row_cell_renderables(row_key, listing)
 
         try:
-            table.update_cell(row_key, "Card Name", display_name)
+            for col, val in zip(RESULTS_TABLE_COLUMNS, renderables, strict=True):
+                table.update_cell(row_key, col, val)
         except (CellDoesNotExist, RowDoesNotExist):
             return
+
+    def _update_row_display(self, row_key: str, listing: CardListing) -> None:
+        self._update_row_cells(row_key, listing)
+
+    def _cancel_added_highlight_timer(self) -> None:
+        if self._added_highlight_timer is not None:
+            self._added_highlight_timer.stop()
+            self._added_highlight_timer = None
+
+    def _apply_added_highlight_for_rows(self, row_keys: set[str]) -> None:
+        for row_key in row_keys:
+            listing = self._row_to_listing.get(row_key)
+
+            if listing is not None:
+                self._update_row_cells(row_key, listing)
+
+    def _clear_added_highlight(self) -> None:
+        self._added_highlight_timer = None
+        keys_to_clear = list(self._recently_added_row_keys)
+        self._recently_added_row_keys.clear()
+
+        for row_key in keys_to_clear:
+            listing = self._row_to_listing.get(row_key)
+
+            if listing is not None:
+                self._update_row_cells(row_key, listing)
 
     def update_working_collection_name(self) -> None:
         label = self.query_one("#working-collection-name", Static)
@@ -157,6 +208,7 @@ class SearchScreen(Container):
 
         prev_highlighted = option_list.highlighted
         prev_key: str | None = None
+
         if prev_highlighted is not None and 0 <= prev_highlighted < len(
             self._working_list_keys
         ):
@@ -175,6 +227,7 @@ class SearchScreen(Container):
                 for item in items
             ]
         )
+
         if prev_key is not None and prev_key in keys:
             option_list.highlighted = keys.index(prev_key)
         else:
@@ -226,9 +279,10 @@ class SearchScreen(Container):
         if not self._selected_row_keys:
             return 0
 
+        added_row_keys = set(self._selected_row_keys)
         listings: list[CardListing] = []
 
-        for row_key in self._selected_row_keys:
+        for row_key in added_row_keys:
             listing = self._row_to_listing.get(row_key)
             if listing is not None:
                 listings.append(listing)
@@ -239,10 +293,14 @@ class SearchScreen(Container):
 
         items = make_collection_items_from_listings(listings, qty=1)
         add_items(items)
-
         self._selected_row_keys.clear()
-        self.refresh_after_collection_change()
 
+        self._recently_added_row_keys.update(added_row_keys)
+        self._cancel_added_highlight_timer()
+        self._apply_added_highlight_for_rows(added_row_keys)
+        self._added_highlight_timer = self.set_timer(
+            ADDED_HIGHLIGHT_TTL, self._clear_added_highlight
+        )
         return len(items)
 
     def get_selected_working_item_key(self) -> str | None:
@@ -280,6 +338,7 @@ class SearchScreen(Container):
 
     def _key_for_adjust_or_remove(self) -> str | None:
         key = self.get_selected_working_item_key()
+
         if key is not None and is_in_collection(key):
             return key
         return self.get_current_working_item_key()

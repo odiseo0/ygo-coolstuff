@@ -97,19 +97,52 @@ class CollectionsScreen(Container):
             status.update("")
 
     async def _load_detail(self, collection_id: int) -> None:
+        previous_detail = self._detail_collection
+        previous_id = self._selected_collection_id
         self._loading_detail = True
         self._selected_collection_id = collection_id
         self._render_detail_content()
-        coll = await load_collection_into_working(collection_id)
+
+        try:
+            coll = await load_collection_into_working(collection_id)
+        except Exception:
+            self._loading_detail = False
+            self._selected_collection_id = previous_id
+            self._detail_collection = previous_detail
+            self._render_detail_content()
+            root = self.app.screen
+
+            if hasattr(root, "_notify"):
+                root._notify(
+                    "Collection could not be loaded. Please try again.", "warning"
+                )
+            else:
+                self.app.notify(
+                    "Collection could not be loaded. Please try again.",
+                    severity="warning",
+                )
+            return
+
         self._loading_detail = False
         self._detail_collection = coll
 
         if coll is None:
-            self.app.notify(
-                "Collection not found or could not be loaded.",
-                severity="warning",
-            )
-            self._selected_collection_id = None
+            self._selected_collection_id = previous_id
+            self._detail_collection = previous_detail
+            root = self.app.screen
+
+            if hasattr(root, "_notify"):
+                root._notify("Collection not found or could not be loaded.", "warning")
+            else:
+                self.app.notify(
+                    "Collection not found or could not be loaded.",
+                    severity="warning",
+                )
+        else:
+            root = self.app.screen
+
+            if hasattr(root, "_refresh_screens_after_draft_change"):
+                root._refresh_screens_after_draft_change()
 
         self._render_detail_content()
 

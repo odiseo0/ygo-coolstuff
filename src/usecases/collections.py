@@ -179,20 +179,7 @@ def make_collection_items_from_listings(
     listings: list[cards.CardListing],
     qty: int = 1,
 ) -> list[cards.CollectionItem]:
-    qty_safe = _ensure_positive_quantity(qty)
-    return [
-        cards.CollectionItem(
-            name=listing.name,
-            set=listing.set,
-            code=listing.code,
-            qty=qty_safe,
-            price=listing.price,
-            rarity=listing.rarity,
-            condition=listing.condition,
-            stock=listing.stock,
-        )
-        for listing in listings
-    ]
+    return [_make_collection_item(listing, qty) for listing in listings]
 
 
 def adjust_quantity(key: str, delta: int) -> bool:
@@ -278,6 +265,26 @@ def get_working_collection_id() -> int | None:
     return _WORKING_COLLECTION_ID
 
 
+def _set_working_from_collection(coll: Collection) -> None:
+    global _WORKING_COLLECTION, _WORKING_COLLECTION_ID, _WORKING_COLLECTION_NAME
+    _WORKING_COLLECTION.clear()
+
+    for db_item in coll.items:
+        cards_item = db_item_to_cards_item(db_item)
+        _WORKING_COLLECTION[cards_item.key] = cards_item
+
+    _WORKING_COLLECTION_ID = coll.id
+    _WORKING_COLLECTION_NAME = coll.name
+    _UNDO_STACK.clear()
+
+
+def _clear_working_link() -> None:
+    global _WORKING_COLLECTION_ID, _WORKING_COLLECTION_NAME
+
+    _WORKING_COLLECTION_ID = None
+    _WORKING_COLLECTION_NAME = "Working draft"
+
+
 async def list_collections() -> list[Collection]:
     return await get_collections_db()
 
@@ -331,40 +338,16 @@ async def save_working_collection(name: str) -> Collection | None:
 async def load_collection_into_working(
     collection_id: int,
 ) -> Collection | None:
-    """Loads collection from DB once, populates working draft, returns it for detail."""
     coll = await get_collection_db(collection_id)
     if coll is None:
         return None
-
-    global _WORKING_COLLECTION, _WORKING_COLLECTION_ID, _WORKING_COLLECTION_NAME
-    _WORKING_COLLECTION.clear()
-    for db_item in coll.items:
-        cards_item = db_item_to_cards_item(db_item)
-        _WORKING_COLLECTION[cards_item.key] = cards_item
-    _WORKING_COLLECTION_ID = coll.id
-    _WORKING_COLLECTION_NAME = coll.name
-    _UNDO_STACK.clear()
+    _set_working_from_collection(coll)
     return coll
 
 
 async def load_working_collection(collection_id: int) -> bool:
-    global _WORKING_COLLECTION, _WORKING_COLLECTION_ID, _WORKING_COLLECTION_NAME
-    coll = await load_collection(collection_id)
-
-    if coll is None:
-        return False
-
-    _WORKING_COLLECTION.clear()
-
-    for db_item in coll.items:
-        cards_item = db_item_to_cards_item(db_item)
-        _WORKING_COLLECTION[cards_item.key] = cards_item
-
-    _WORKING_COLLECTION_ID = coll.id
-    _WORKING_COLLECTION_NAME = coll.name
-    _UNDO_STACK.clear()
-
-    return True
+    coll = await load_collection_into_working(collection_id)
+    return coll is not None
 
 
 async def create_collection(name: str) -> Collection:
@@ -372,7 +355,6 @@ async def create_collection(name: str) -> Collection:
     db_items = [
         cards_item_to_db_item(cards_item, collection_id=0) for cards_item in items
     ]
-
     return await create_collection_db(name, db_items)
 
 
@@ -381,12 +363,10 @@ async def update_collection(collection: Collection) -> Collection:
 
 
 async def delete_collection(collection_id: int) -> None:
-    global _WORKING_COLLECTION_ID, _WORKING_COLLECTION_NAME
     await delete_collection_items_by_collection_id_db(collection_id)
     await delete_collection_db(collection_id)
     if _WORKING_COLLECTION_ID == collection_id:
-        _WORKING_COLLECTION_ID = None
-        _WORKING_COLLECTION_NAME = "Working draft"
+        _clear_working_link()
         # Items remain in memory so user can save as new (n) if deletion was accidental
 
 

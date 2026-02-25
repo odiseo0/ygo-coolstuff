@@ -1,4 +1,6 @@
+import logging
 from pathlib import Path
+from typing import Literal
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -32,6 +34,17 @@ from src.usecases.collections import (
     undo_last,
 )
 from src.usecases.search_cards import search_cards
+
+
+LOG = logging.getLogger(__name__)
+
+
+def _user_message(operation: str, error: Exception) -> str:
+    LOG.exception("%s failed", operation)
+
+    if str(error).strip():
+        return f"{operation} failed: {error}"
+    return f"{operation} failed. Please try again."
 
 
 CSS_FILE = Path(__file__).parent / "app.tcss"
@@ -90,12 +103,58 @@ class RootScreen(Screen):
     def _set_mode_state(self, state: ModeState) -> None:
         self.mode_state = state
 
+    def _notify(
+        self,
+        message: str,
+        kind: Literal["success", "info", "warning", "error"] = "info",
+        title: str | None = None,
+    ) -> None:
+        severity_map = {
+            "success": "information",
+            "info": "information",
+            "warning": "warning",
+            "error": "error",
+        }
+        severity = severity_map[kind]
+
+        if kind == "error" and title is None:
+            title = "Error"
+
+        self.notify(message, severity=severity, title=title)
+
+    def _refresh_screens_after_draft_change(
+        self, reselect_collection_id: int | None = None
+    ) -> None:
+        self.query_one("#search-screen", SearchScreen).refresh_after_collection_change()
+        home_screen = self.query_one("#home-screen", HomeScreen)
+        self.run_worker(home_screen.refresh_home(), exclusive=False)
+        collections_screen = self.query_one("#collections-screen", CollectionsScreen)
+
+        if reselect_collection_id is not None:
+            self.run_worker(
+                collections_screen.refresh_after_rename_or_delete(
+                    reselect_collection_id
+                ),
+                exclusive=True,
+            )
+        else:
+            self.run_worker(collections_screen.refresh_collection(), exclusive=True)
+
     def _show_screen(self, screen_id: str, breadcrumb: str, hints: str) -> None:
         for target in self.query(".screen"):
             target.add_class("is-hidden")
+
         self.query_one(f"#{screen_id}").remove_class("is-hidden")
+
         if screen_id == "search-screen":
-            self.query_one("#search-screen", SearchScreen).refresh_after_collection_change()
+            self.query_one(
+                "#search-screen", SearchScreen
+            ).refresh_after_collection_change()
+
+        if screen_id == "home-screen":
+            home_screen = self.query_one("#home-screen", HomeScreen)
+            self.run_worker(home_screen.refresh_home(), exclusive=False)
+
         self._set_mode_state(ModeState(mode="NAV", breadcrumb=breadcrumb, hints=hints))
 
     def on_navigate_requested(self, message: NavigateRequested) -> None:
@@ -136,7 +195,18 @@ class RootScreen(Screen):
             )
         )
 
-        listings = await search_cards(message.query)
+        try:
+            listings = await search_cards(message.query)
+        except Exception as e:
+            self._notify(_user_message("Search", e), "error")
+            self._set_mode_state(
+                ModeState(
+                    mode="NAV",
+                    breadcrumb=self.mode_state.breadcrumb,
+                    hints=SEARCH_HINTS,
+                )
+            )
+            return
 
         search_screen = self.query_one("#search-screen", SearchScreen)
         search_screen.render_results(listings)
@@ -170,6 +240,8 @@ class RootScreen(Screen):
         search_screen = self.query_one("#search-screen", SearchScreen)
         added_count = search_screen.add_selected_to_collection()
 
+        if added_count > 0:
+            self._refresh_screens_after_draft_change()
         if added_count == 0:
             hints = "No rows selected"
         else:
@@ -184,8 +256,7 @@ class RootScreen(Screen):
 
     def on_undo_requested(self, _: UndoRequested) -> None:
         undo_last()
-        search_screen = self.query_one("#search-screen", SearchScreen)
-        search_screen.refresh_after_collection_change()
+        self._refresh_screens_after_draft_change()
         self._set_mode_state(
             ModeState(
                 mode=self.mode_state.mode,
@@ -234,9 +305,9 @@ class RootScreen(Screen):
             return
 
         if search_screen.adjust_selected_quantity(1):
-            search_screen.refresh_after_collection_change()
+            self._refresh_screens_after_draft_change()
         else:
-            self.notify("Select a working item to adjust.", severity="information")
+            self._notify("Select a working item to adjust.", "info")
 
     def action_qty_down(self) -> None:
         search_screen = self.query_one("#search-screen", SearchScreen)
@@ -245,9 +316,9 @@ class RootScreen(Screen):
             return
 
         if search_screen.adjust_selected_quantity(-1):
-            search_screen.refresh_after_collection_change()
+            self._refresh_screens_after_draft_change()
         else:
-            self.notify("Select a working item to adjust.", severity="information")
+            self._notify("Select a working item to adjust.", "info")
 
     def action_rename_draft(self) -> None:
         if self.query_one("#search-screen", SearchScreen).has_class("is-hidden"):
@@ -278,7 +349,7 @@ class RootScreen(Screen):
 
         if not search_screen.has_class("is-hidden"):
             if search_screen.remove_selected_item():
-                search_screen.refresh_after_collection_change()
+                self._refresh_screens_after_draft_change()
 
     def action_rename_collection(self) -> None:
         collections_screen = self.query_one("#collections-screen", CollectionsScreen)
@@ -326,14 +397,14 @@ class RootScreen(Screen):
             "Enter: load  n: new  r: rename  d: delete",
         )
         collections_screen = self.query_one("#collections-screen", CollectionsScreen)
-        self.run_worker(collections_screen.refresh_collection(), exclusive=False)
+        self.run_worker(collections_screen.refresh_collection(), exclusive=True)
         self.query_one("#collections-option-list").focus()
 
     def action_focus_search(self) -> None:
         self.post_message(SearchInputFocused())
 
     def action_help(self) -> None:
-        self.app.notify("Help overlay coming soon.", severity="information")
+        self._notify("Help overlay coming soon.", "info")
 
     def action_undo(self) -> None:
         self.post_message(UndoRequested())
@@ -375,14 +446,24 @@ class RootScreen(Screen):
             return
 
         name = result.strip()
-        set_working_collection_name(name)
         wid = get_working_collection_id()
 
         if wid is not None:
-            self.run_worker(rename_collection(wid, name), exclusive=False)
+            self.run_worker(self._do_draft_rename(wid, name), exclusive=False)
+            return
 
-        search_screen = self.query_one("#search-screen", SearchScreen)
-        search_screen.update_working_collection_name()
+        set_working_collection_name(name)
+        self._refresh_screens_after_draft_change()
+
+    async def _do_draft_rename(self, collection_id: int, name: str) -> None:
+        try:
+            await rename_collection(collection_id, name)
+        except Exception as e:
+            self._notify(_user_message("Rename draft", e), "error")
+            return
+
+        set_working_collection_name(name)
+        self._refresh_screens_after_draft_change()
 
     def _on_collection_rename_done(
         self, result: str | None, collection_id: int
@@ -396,7 +477,12 @@ class RootScreen(Screen):
         )
 
     async def _do_rename_collection(self, collection_id: int, name: str) -> None:
-        await rename_collection(collection_id, name)
+        try:
+            await rename_collection(collection_id, name)
+        except Exception as e:
+            self._notify(_user_message("Rename collection", e), "error")
+            return
+
         collections_screen = self.query_one("#collections-screen", CollectionsScreen)
         await collections_screen.refresh_after_rename_or_delete(collection_id)
 
@@ -422,33 +508,27 @@ class RootScreen(Screen):
 
     def _do_start_new_collection(self, name: str) -> None:
         start_new_collection(name)
-        self.notify("New empty draft. Press Ctrl+S to save.", severity="information")
-        search_screen = self.query_one("#search-screen", SearchScreen)
-        search_screen.refresh_after_collection_change()
-        self.run_worker(
-            self.query_one("#collections-screen", CollectionsScreen)
-            .refresh_after_rename_or_delete(),
-            exclusive=False,
-        )
+        self._notify("New empty draft. Press Ctrl+S to save.", "info")
+        self._refresh_screens_after_draft_change()
 
     async def _do_save_working_collection(self, name: str) -> None:
         try:
             await save_working_collection(name)
         except Exception as e:
-            self.notify(f"Save failed: {e}", title="Error", severity="error")
+            self._notify(_user_message("Save", e), "error")
             return
 
-        self.notify("Collection saved", severity="information")
-        search_screen = self.query_one("#search-screen", SearchScreen)
-        search_screen.update_working_collection_name()
-        collections_screen = self.query_one("#collections-screen", CollectionsScreen)
-        saved_id = get_working_collection_id()
-        await collections_screen.refresh_after_rename_or_delete(saved_id)
+        self._notify("Collection saved", "success")
+        self._refresh_screens_after_draft_change(get_working_collection_id())
 
     async def _do_delete_collection(self, collection_id: int) -> None:
-        await delete_collection(collection_id)
-        collections_screen = self.query_one("#collections-screen", CollectionsScreen)
-        await collections_screen.refresh_after_rename_or_delete()
+        try:
+            await delete_collection(collection_id)
+        except Exception as e:
+            self._notify(_user_message("Delete collection", e), "error")
+            return
+
+        self._refresh_screens_after_draft_change()
 
 
 class CardScraperApp(App):
