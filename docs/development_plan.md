@@ -52,15 +52,13 @@
 - [x] Persist working collection to DB (save/load)
 - [x] Wire DB models into collections screen (load list + details)
 - [x] Implement quantity adjustments (+/-), remove, rename in working collection
-- [ ] Use real data for Home Screen
-- [ ] Add stronger “added row” highlight in results (row style, not only prefix)
+- [x] Use real data for Home Screen
 - [ ] Implement import parser for .txt and .ydk
 - [ ] Wire import flow into UI (file list, preview, add all)
 - [ ] Add error handling/loading states/empty states to UI
-- [ ] Export to Excel template (final milestone)
 - [ ] Add card image popup from results table
+- [ ] Export to Excel template (final milestone)
 - [ ] Better UI, navigation and color schemes
-- [ ] Add smoke tests (scraper + collection + import)
 
 ## Milestones
 1. UI foundation: screens + navigation (done)

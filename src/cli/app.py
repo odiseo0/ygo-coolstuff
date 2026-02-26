@@ -18,7 +18,6 @@ from src.cli.ui.messages import (
     NavigateRequested,
     SearchInputFocused,
     SearchSubmitted,
-    SelectionToggled,
     UndoRequested,
 )
 from src.cli.ui.mode_state import ModeState
@@ -93,6 +92,8 @@ class RootScreen(Screen):
     def on_mount(self) -> None:
         self.focus()
         self._sync_status()
+        home_screen = self.query_one("#home-screen", HomeScreen)
+        self.run_worker(home_screen.refresh_home(), exclusive=False)
 
     def watch_mode_state(self, state: ModeState) -> None:
         self._sync_status()
@@ -222,19 +223,6 @@ class RootScreen(Screen):
                 hints=hints,
             )
         )
-
-    def on_selection_toggled(self, _: SelectionToggled) -> None:
-        search_screen = self.query_one("#search-screen", SearchScreen)
-        did_toggle = search_screen.toggle_current_row_selection()
-
-        if did_toggle:
-            self._set_mode_state(
-                ModeState(
-                    mode="SELECT",
-                    breadcrumb=self.mode_state.breadcrumb,
-                    hints=SELECT_HINTS,
-                )
-            )
 
     def on_add_selected_requested(self, _: AddSelectedRequested) -> None:
         search_screen = self.query_one("#search-screen", SearchScreen)
