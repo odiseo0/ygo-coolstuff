@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -34,3 +36,12 @@ def extract_price_value(price_str: str) -> float:
         return Decimal(price_str.replace("$", "").replace(",", ""))
     except ValueError:
         return Decimal(0)
+
+
+def to_slug(s: str) -> str:
+    s = unicodedata.normalize("NFKD", s)
+    s = s.encode("ascii", "ignore").decode("ascii")
+    s = s.lower().strip()
+    s = re.sub(r"[^\w\s-]", "", s)
+    s = re.sub(r"[-\s]+", "-", s)
+    return s

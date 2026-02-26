@@ -6,4 +6,9 @@ from src.utils.constants import (
     REQUEST_TIMEOUT_SECONDS,
     USER_AGENT,
 )
-from src.utils.utils import deduplicate_listings, extract_price_value, sort_listings
+from src.utils.utils import (
+    deduplicate_listings,
+    extract_price_value,
+    sort_listings,
+    to_slug,
+)
