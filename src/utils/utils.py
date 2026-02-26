@@ -45,3 +45,8 @@ def to_slug(s: str) -> str:
     s = re.sub(r"[^\w\s-]", "", s)
     s = re.sub(r"[-\s]+", "-", s)
     return s
+
+
+def trim_card_name(card_name: str) -> str:
+    left, _, _ = card_name.partition(" - ")
+    return left

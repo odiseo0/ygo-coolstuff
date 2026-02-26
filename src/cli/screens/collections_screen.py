@@ -67,7 +67,7 @@ class CollectionsScreen(Container):
 
         for c in self._collections:
             prefix = "* " if working_id is not None and c.id == working_id else ""
-            options.append(Option(f"{prefix}{c.name} (id:{c.id})", id=str(c.id)))
+            options.append(Option(f"{prefix}{c.name}", id=str(c.id)))
 
         option_list.add_options(options)
 
@@ -78,6 +78,7 @@ class CollectionsScreen(Container):
                 if c.id == reselect_id:
                     highlight_idx = i
                     break
+
         elif prior_highlighted is not None and 0 <= prior_highlighted < len(
             self._collections
         ):
@@ -170,7 +171,7 @@ class CollectionsScreen(Container):
         item_count = len(coll.items)
         total_qty = sum(i.card_quantity for i in coll.items)
         summary = Static(
-            f"{item_count} item(s) · {total_qty} total · id:{coll.id}",
+            f"{item_count} Item(s) · {total_qty} Total · ID:{coll.id}",
             classes="muted",
         )
         content.mount(summary)
@@ -181,14 +182,14 @@ class CollectionsScreen(Container):
 
         content.mount(
             Static(
-                "Card Name                 Code         Qty",
+                "Card Name                 Code          Price          Quantity",
                 classes="table-header",
             )
         )
 
         for item in coll.items:
             row = Static(
-                f"{item.card_name[:24]:<24}  {item.card_code:<12}  {item.card_quantity}",
+                f"{item.card_name.split(" - ", 1)[0]}     {item.card_code}   {item.card_price}  {item.card_quantity}",
                 classes="table-row",
             )
             content.mount(row)
