@@ -1,7 +1,9 @@
+from decimal import Decimal
+
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
-from textual.widgets import OptionList, Static
+from textual.widgets import DataTable, OptionList, Static
 from textual.widgets.option_list import Option
 
 from src.models.db_models import Collection
@@ -147,6 +149,30 @@ class CollectionsScreen(Container):
 
         self._render_detail_content()
 
+    def _build_items_table(self, coll: Collection) -> DataTable:
+        table = DataTable(id="collections-detail-table")
+        table.show_header = True
+        table.cursor_type = "row"
+        table.show_cursor = False
+        table.zebra_stripes = True
+
+        table.add_columns("Card Name", "Code", "Rarity", "Price", "Qty", "Total Price")
+
+        for item in coll.items:
+            table.add_row(
+                item.card_name.split(" - ", 1)[0],
+                item.card_code,
+                item.card_rarity,
+                item.card_price,
+                str(item.card_quantity),
+                "${:,.2f}".format(
+                    item.card_quantity
+                    * Decimal(item.card_price.replace("$", "").replace(",", "."))
+                ),
+            )
+
+        return table
+
     def _render_detail_content(self) -> None:
         content = self.query_one("#collections-detail-content", Container)
 
@@ -171,7 +197,7 @@ class CollectionsScreen(Container):
         item_count = len(coll.items)
         total_qty = sum(i.card_quantity for i in coll.items)
         summary = Static(
-            f"{item_count} Item(s) · {total_qty} Total · ID:{coll.id}",
+            f"{item_count} Item(s) · {total_qty} Total · ${str(sum(i.card_quantity * Decimal(i.card_price.replace("$", "").replace(",", ".")) for i in coll.items))} USD",
             classes="muted",
         )
         content.mount(summary)
@@ -180,19 +206,8 @@ class CollectionsScreen(Container):
             content.mount(Static("No items", classes="muted"))
             return
 
-        content.mount(
-            Static(
-                "Card Name                 Code          Price          Quantity",
-                classes="table-header",
-            )
-        )
-
-        for item in coll.items:
-            row = Static(
-                f"{item.card_name.split(" - ", 1)[0]}     {item.card_code}   {item.card_price}  {item.card_quantity}",
-                classes="table-row",
-            )
-            content.mount(row)
+        table = self._build_items_table(coll)
+        content.mount(table)
 
     def get_selected_collection_id(self) -> int | None:
         return self._selected_collection_id
