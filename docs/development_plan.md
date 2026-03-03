@@ -57,8 +57,8 @@
 - [x] Wire import flow into UI (file list, preview, add all)
 - [x] Fuzzy Search
 - [x] Add card image popup from results table
-- [ ] Export to Excel template (final milestone)
-- [ ] Better UI, navigation and color schemes
+- [x] Export to Excel template (final milestone)
+- [x] Better UI, navigation and color schemes
 
 ## Milestones
 1. UI foundation: screens + navigation (done)
