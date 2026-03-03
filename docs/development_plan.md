@@ -55,7 +55,7 @@
 - [x] Use real data for Home Screen
 - [ ] Implement import parser for .txt and .ydk
 - [ ] Wire import flow into UI (file list, preview, add all)
-- [ ] Add error handling/loading states/empty states to UI
+- [ ] Fuzzy Search
 - [ ] Add card image popup from results table
 - [ ] Export to Excel template (final milestone)
 - [ ] Better UI, navigation and color schemes
