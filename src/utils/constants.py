@@ -14,3 +14,4 @@ OUTPUT_FILE = "results.csv"
 
 EXCEL_TEMPLATE_FILENAME = "Template.xlsx"
 EXPORT_PLATFORM_NAME = "CoolStuffInc"
+YGO_API_URL = "https://db.ygoprodeck.com/api/v7/cardinfo.php"

@@ -4,9 +4,7 @@ from urllib.parse import quote_plus
 
 from httpx import AsyncClient, HTTPStatusError, RequestError
 
-
-# docs: https://ygoprodeck.com/api-guide/
-YGO_API_URL = "https://db.ygoprodeck.com/api/v7/cardinfo.php"
+from src.utils.constants import YGO_API_URL
 
 
 class YGOPROCardImage(TypedDict):

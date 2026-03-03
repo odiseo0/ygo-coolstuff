@@ -318,14 +318,19 @@ async def save_working_collection(name: str) -> Collection | None:
 
     if _WORKING_COLLECTION_ID is not None:
         await delete_collection_items_by_collection_id_db(_WORKING_COLLECTION_ID)
+
         if db_items:
             await create_many_collection_items_db(_WORKING_COLLECTION_ID, db_items)
+
         existing = await get_collection_db(_WORKING_COLLECTION_ID)
+
         if existing is not None and existing.name != name:
             existing.name = name
             await update_collection_db(existing)
+
         _WORKING_COLLECTION_NAME = name
         coll = await get_collection_db(_WORKING_COLLECTION_ID)
+
         return coll
 
     coll = await create_collection_db(name, db_items)
@@ -339,9 +344,12 @@ async def load_collection_into_working(
     collection_id: int,
 ) -> Collection | None:
     coll = await get_collection_db(collection_id)
+
     if coll is None:
         return None
+
     _set_working_from_collection(coll)
+
     return coll
 
 
@@ -355,6 +363,7 @@ async def create_collection(name: str) -> Collection:
     db_items = [
         cards_item_to_db_item(cards_item, collection_id=0) for cards_item in items
     ]
+
     return await create_collection_db(name, db_items)
 
 
@@ -365,9 +374,10 @@ async def update_collection(collection: Collection) -> Collection:
 async def delete_collection(collection_id: int) -> None:
     await delete_collection_items_by_collection_id_db(collection_id)
     await delete_collection_db(collection_id)
+
+    # Items remain in memory so user can save as new (n) if deletion was accidental
     if _WORKING_COLLECTION_ID == collection_id:
         _clear_working_link()
-        # Items remain in memory so user can save as new (n) if deletion was accidental
 
 
 async def create_collection_item(collection_item: DbCollectionItem) -> DbCollectionItem:

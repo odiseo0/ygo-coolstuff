@@ -5,6 +5,7 @@ from src.utils.constants import (
     INPUT_FILE,
     REQUEST_TIMEOUT_SECONDS,
     USER_AGENT,
+    YGO_API_URL,
 )
 from src.utils.utils import (
     deduplicate_listings,
