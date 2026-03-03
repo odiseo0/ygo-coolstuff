@@ -1,12 +1,19 @@
 import asyncio
 import re
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from bs4 import BeautifulSoup
 from httpx import AsyncClient, HTTPStatusError, RequestError
 
 from src.models.cards import CardListing
-from src.utils.constants import BASE_URL, REQUEST_TIMEOUT_SECONDS, USER_AGENT
+from src.utils.constants import (
+    BASE_URL,
+    BASE_URL_SEARCH,
+    REQUEST_TIMEOUT_SECONDS,
+    SEARCH_DEFAULT_PAGE,
+    SEARCH_RESULTS_PER_PAGE,
+    USER_AGENT,
+)
 from src.utils.utils import deduplicate_listings
 
 
@@ -47,6 +54,130 @@ async def scrape_cards(cards: list[str]) -> list[CardListing]:
                 all_listings.extend(listings)
 
     return all_listings
+
+
+async def fuzzy_search_cards(
+    query: str,
+    page: int = SEARCH_DEFAULT_PAGE,
+    results_per_page: int = SEARCH_RESULTS_PER_PAGE,
+) -> list[str]:
+    normalized_query = query.strip()
+
+    if not normalized_query:
+        return []
+
+    safe_page = max(page, 1)
+    safe_results = max(min(results_per_page, SEARCH_RESULTS_PER_PAGE), 1)
+
+    params = {
+        "pa": "searchOnName",
+        "page": str(safe_page),
+        "resultsPerPage": str(safe_results),
+        "q": normalized_query,
+    }
+
+    async with AsyncClient(
+        headers={"User-Agent": USER_AGENT},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+        follow_redirects=True,
+    ) as client:
+        try:
+            response = await client.get(BASE_URL_SEARCH, params=params)
+            response.raise_for_status()
+        except (HTTPStatusError, RequestError):
+            return []
+
+    try:
+        html = response.text
+    except Exception:
+        return []
+
+    soup = BeautifulSoup(html, "html.parser")
+    names: set[str] = set()
+
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+
+        if "/p/YuGiOh/" not in href:
+            continue
+
+        text = link.get_text(strip=True)
+
+        if text:
+            names.add(text)
+
+    if not names:
+        title_elements = soup.select("div.products-container h3, div.products-container h2")
+
+        for title in title_elements:
+            text = title.get_text(strip=True)
+
+            if text:
+                names.add(text)
+
+    return sorted(names)
+
+
+async def scrape_search_results(
+    query: str,
+    page: int = SEARCH_DEFAULT_PAGE,
+    results_per_page: int = SEARCH_RESULTS_PER_PAGE,
+) -> list[CardListing]:
+    normalized_query = query.strip()
+
+    if not normalized_query:
+        return []
+
+    safe_page = max(page, 1)
+    safe_results = max(min(results_per_page, SEARCH_RESULTS_PER_PAGE), 1)
+
+    params = {
+        "pa": "searchOnName",
+        "page": str(safe_page),
+        "resultsPerPage": str(safe_results),
+        "q": normalized_query,
+    }
+
+    async with AsyncClient(
+        headers={"User-Agent": USER_AGENT},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+        follow_redirects=True,
+    ) as client:
+        try:
+            response = await client.get(BASE_URL_SEARCH, params=params)
+            response.raise_for_status()
+        except (HTTPStatusError, RequestError):
+            return []
+
+    try:
+        html = response.text
+    except Exception:
+        return []
+
+    soup = BeautifulSoup(html, "html.parser")
+    candidate_names: set[str] = set()
+
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+
+        if "/p/YuGiOh/" not in href:
+            continue
+
+        try:
+            slug = href.split("/p/YuGiOh/", 1)[1]
+        except IndexError:
+            continue
+
+        decoded = unquote(slug)
+        name = decoded.replace("+", " ").strip()
+
+        if name:
+            candidate_names.add(name)
+
+    if not candidate_names:
+        return []
+
+    return await scrape_cards(sorted(candidate_names))
 
 
 def parse_listings_from_text(soup: BeautifulSoup, card_name: str) -> list[CardListing]:

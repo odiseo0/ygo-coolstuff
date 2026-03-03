@@ -2,8 +2,6 @@ from typing import TypedDict
 
 from httpx import AsyncClient, HTTPStatusError, RequestError
 
-from src.utils import to_slug
-
 
 # docs: https://ygoprodeck.com/api-guide/
 YGO_API_URL = "https://db.ygoprodeck.com/api/v7/cardinfo.php"
@@ -31,7 +29,7 @@ class YGROPROResponse(TypedDict):
 
 async def fuzzy_search(query: str) -> list[YGROPROResponse]:
     async with AsyncClient() as client:
-        response = await client.get(f"{YGO_API_URL}?fname=" + to_slug(query))
+        response = await client.get(f"{YGO_API_URL}?fname=" + query.strip())
 
     return response.json()
 

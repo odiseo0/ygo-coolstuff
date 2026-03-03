@@ -33,7 +33,7 @@ from src.usecases.collections import (
     start_new_collection,
     undo_last,
 )
-from src.usecases.search_cards import search_cards
+from src.usecases.search_cards import search_cards_fuzzy
 from src.usecases.ydk_import import ImportDeckError, import_deck_file
 
 
@@ -51,7 +51,10 @@ def _user_message(operation: str, error: Exception) -> str:
 CSS_FILE = Path(__file__).parent / "app.tcss"
 
 DEFAULT_HINTS = "s: search  i: import  c: collections  q: quit"
-SEARCH_HINTS = "Space: select  a: add  u: undo  i: image  /: search"
+SEARCH_HINTS = (
+    "Space: select  a: add  u: undo  i: image  /: search  "
+    "PgUp/PgDn or '['/']': page"
+)
 SELECT_HINTS = "SELECT: Space: toggle  a: add  u: undo  i: image  /: search  Esc: back"
 IMPORT_HINTS = "Enter: import  Esc: back"
 
@@ -78,6 +81,10 @@ class RootScreen(Screen):
         ("d", "remove_or_delete", "Remove/Delete"),
         ("r", "rename_collection", "Rename collection"),
         ("n", "new_collection", "New collection"),
+        Binding("pageup", "prev_page", "Prev page", priority=True),
+        Binding("pagedown", "next_page", "Next page", priority=True),
+        Binding("[", "prev_page", "Prev page", priority=True),
+        Binding("]", "next_page", "Next page", priority=True),
     ]
 
     def compose(self) -> ComposeResult:
@@ -203,7 +210,7 @@ class RootScreen(Screen):
         )
 
         try:
-            listings = await search_cards(message.query)
+            listings = await search_cards_fuzzy(message.query)
         except Exception as e:
             self._notify(_user_message("Search", e), "error")
             self._set_mode_state(
@@ -219,7 +226,18 @@ class RootScreen(Screen):
         search_screen.render_results(listings)
 
         if listings:
-            hints = f"Found {len(listings)} listings"
+            pagination_state = search_screen.get_pagination_state()
+
+            if pagination_state is not None:
+                current_page, total_pages = pagination_state
+                prefix = (
+                    f"Found {len(listings)} listings "
+                    f"(Page {current_page}/{total_pages}). "
+                )
+            else:
+                prefix = f"Found {len(listings)} listings. "
+
+            hints = prefix + SEARCH_HINTS
         else:
             hints = "No results"
         self._set_mode_state(
@@ -491,6 +509,64 @@ class RootScreen(Screen):
                     hints=SELECT_HINTS,
                 )
             )
+
+    def action_next_page(self) -> None:
+        search_screen = self.query_one("#search-screen", SearchScreen)
+
+        if search_screen.has_class("is-hidden"):
+            return
+
+        changed = search_screen.next_page()
+        state = search_screen.get_pagination_state()
+
+        if not changed:
+            if state is not None:
+                current, total = state
+                hints = f"Last page (Page {current}/{total}). " + SEARCH_HINTS
+            else:
+                hints = "Last page. " + SEARCH_HINTS
+        elif state is not None:
+            current, total = state
+            hints = f"Page {current}/{total}. " + SEARCH_HINTS
+        else:
+            hints = SEARCH_HINTS
+
+        self._set_mode_state(
+            ModeState(
+                mode="NAV",
+                breadcrumb=self.mode_state.breadcrumb,
+                hints=hints,
+            )
+        )
+
+    def action_prev_page(self) -> None:
+        search_screen = self.query_one("#search-screen", SearchScreen)
+
+        if search_screen.has_class("is-hidden"):
+            return
+
+        changed = search_screen.previous_page()
+        state = search_screen.get_pagination_state()
+
+        if not changed:
+            if state is not None:
+                current, total = state
+                hints = f"First page (Page {current}/{total}). " + SEARCH_HINTS
+            else:
+                hints = "First page. " + SEARCH_HINTS
+        elif state is not None:
+            current, total = state
+            hints = f"Page {current}/{total}. " + SEARCH_HINTS
+        else:
+            hints = SEARCH_HINTS
+
+        self._set_mode_state(
+            ModeState(
+                mode="NAV",
+                breadcrumb=self.mode_state.breadcrumb,
+                hints=hints,
+            )
+        )
 
     def action_back(self) -> None:
         if not self.query_one("#home-screen").has_class("is-hidden"):

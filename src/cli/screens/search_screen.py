@@ -9,6 +9,7 @@ from src.cli.ui.messages import SearchSubmitted
 from src.cli.widgets.results_table import ResultsTable
 from src.cli.widgets.search_input import SearchInput
 from src.models.cards import CardListing
+from src.utils.constants import SEARCH_RESULTS_PER_PAGE
 from src.usecases.collections import (
     add_items,
     adjust_quantity,
@@ -34,6 +35,9 @@ class SearchScreen(Container):
         self._working_list_keys: list[str] = []
         self._recently_added_row_keys: set[str] = set()
         self._added_highlight_timer: object | None = None
+        self._all_listings: list[CardListing] = []
+        self._page_index: int = 0
+        self._footer_hints_id = "search-footer-hints"
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="split", id="search-split"):
@@ -48,6 +52,7 @@ class SearchScreen(Container):
                 yield Static(
                     "Space: select  a: add  u: undo  i: image  +/-: qty",
                     classes="muted",
+                    id=self._footer_hints_id,
                 )
             with Container(classes="panel split-panel", id="search-side"):
                 yield Static("Working Collection", classes="panel-title")
@@ -76,7 +81,27 @@ class SearchScreen(Container):
         event.input.blur()
 
     def render_results(self, listings: list[CardListing]) -> None:
-        self._render_results(listings)
+        self._all_listings = list(listings)
+        self._page_index = 0
+        self._render_current_page()
+        self._update_footer_hints()
+
+    def _render_current_page(self) -> None:
+        if not self._all_listings:
+            self._render_results([])
+            self._update_footer_hints()
+            return
+
+        start = self._page_index * SEARCH_RESULTS_PER_PAGE
+
+        if start >= len(self._all_listings):
+            self._page_index = 0
+            start = 0
+
+        end = start + SEARCH_RESULTS_PER_PAGE
+        page_listings = self._all_listings[start:end]
+        self._render_results(page_listings)
+        self._update_footer_hints()
 
     def _render_results(self, listings: list[CardListing]) -> None:
         table = self.query_one("#results-table", ResultsTable)
@@ -113,6 +138,61 @@ class SearchScreen(Container):
             table.move_cursor(row=0, column=0, scroll=True)
 
         self._render_working_collection()
+
+    def next_page(self) -> bool:
+        if not self._all_listings:
+            return False
+
+        total_pages = (len(self._all_listings) + SEARCH_RESULTS_PER_PAGE - 1) // SEARCH_RESULTS_PER_PAGE
+
+        if self._page_index + 1 >= total_pages:
+            return False
+
+        self._page_index += 1
+        self._render_current_page()
+        self._update_footer_hints()
+        return True
+
+    def previous_page(self) -> bool:
+        if not self._all_listings:
+            return False
+
+        if self._page_index == 0:
+            return False
+
+        self._page_index -= 1
+        self._render_current_page()
+        self._update_footer_hints()
+        return True
+
+    def get_pagination_state(self) -> tuple[int, int] | None:
+        if not self._all_listings:
+            return None
+
+        total_pages = (len(self._all_listings) + SEARCH_RESULTS_PER_PAGE - 1) // SEARCH_RESULTS_PER_PAGE
+
+        if total_pages <= 1:
+            return None
+
+        return self._page_index + 1, total_pages
+
+    def _update_footer_hints(self) -> None:
+        try:
+            footer = self.query_one(f"#{self._footer_hints_id}", Static)
+        except Exception:
+            return
+
+        base = "Space: select  a: add  u: undo  i: image  +/-: qty"
+        state = self.get_pagination_state()
+
+        if state is None:
+            footer.update(base)
+            return
+
+        current, total = state
+        footer.update(
+            f"{base}  PgUp/PgDn or '['/']': page  (Page {current}/{total})"
+        )
 
     def _make_row_key(self, listing: CardListing) -> str:
         return f"{listing.code}:{listing.condition}"
