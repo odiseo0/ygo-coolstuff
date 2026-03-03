@@ -50,3 +50,7 @@ def to_slug(s: str) -> str:
 def trim_card_name(card_name: str) -> str:
     left, _, _ = card_name.partition(" - ")
     return left
+
+
+def sanitize_filename(name: str) -> str:
+    return re.sub(r'[\\/:*?"<>|]', "_", name).strip() or "export"

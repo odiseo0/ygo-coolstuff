@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 from typing import Literal
@@ -27,16 +28,25 @@ from src.image_viewer import CardImageModal
 from src.services.ygopro_api import get_card_image_url_by_name
 from src.usecases.collections import (
     delete_collection,
+    get_working_collection,
     get_working_collection_id,
     get_working_collection_name,
+    load_collection,
     rename_collection,
     save_working_collection,
     set_working_collection_name,
     start_new_collection,
     undo_last,
 )
+from src.services.excel_export import (
+    cards_item_to_export_rows,
+    db_items_to_export_rows,
+    export_collection_to_excel,
+    get_default_template_path,
+)
 from src.usecases.search_cards import search_cards_fuzzy
 from src.usecases.ydk_import import ImportDeckError, import_deck_file
+from src.utils.utils import sanitize_filename
 
 
 LOG = logging.getLogger(__name__)
@@ -53,6 +63,9 @@ def _user_message(operation: str, error: Exception) -> str:
 CSS_FILE = Path(__file__).parent / "app.tcss"
 
 DEFAULT_HINTS = "s: search  i: import  c: collections  q: quit"
+COLLECTIONS_HINTS = (
+    "Enter: load  n: new  r: rename  d: delete  x: export"
+)
 SEARCH_HINTS = (
     "Space: select  a: add  ctrl+z: undo  u: image  /: search  "
     "PgUp/PgDn or '['/']': page"
@@ -86,6 +99,7 @@ class RootScreen(Screen):
         ("d", "remove_or_delete", "Remove/Delete"),
         ("r", "rename_collection", "Rename collection"),
         ("n", "new_collection", "New collection"),
+        ("x", "export_excel", "Export Excel"),
         Binding("pageup", "prev_page", "Prev page", priority=True),
         Binding("pagedown", "next_page", "Next page", priority=True),
         Binding("[", "prev_page", "Prev page", priority=True),
@@ -175,6 +189,7 @@ class RootScreen(Screen):
             self.query_one("#import-file-list", OptionList).focus()
 
         self._set_mode_state(ModeState(mode="NAV", breadcrumb=breadcrumb, hints=hints))
+        self._sync_status()
 
     def on_navigate_requested(self, message: NavigateRequested) -> None:
         if message.screen_id == "search-screen":
@@ -189,7 +204,7 @@ class RootScreen(Screen):
             self._show_screen(
                 "collections-screen",
                 "Home > Collections",
-                "Enter: load  n: new  r: rename  d: delete",
+                COLLECTIONS_HINTS,
             )
         elif message.screen_id == "home-screen":
             self._show_screen("home-screen", "Home", DEFAULT_HINTS)
@@ -466,6 +481,14 @@ class RootScreen(Screen):
             self._on_new_collection_done,
         )
 
+    def action_export_excel(self) -> None:
+        if self.query_one("#collections-screen", CollectionsScreen).has_class(
+            "is-hidden"
+        ):
+            self._notify("Open Collections (c) to export.", "info")
+            return
+        self.run_worker(self._run_export_flow(), exclusive=False)
+
     def action_show_search(self) -> None:
         self._show_screen("search-screen", "Home > Search", SEARCH_HINTS)
 
@@ -480,7 +503,7 @@ class RootScreen(Screen):
         self._show_screen(
             "collections-screen",
             "Home > Collections",
-            "Enter: load  n: new  r: rename  d: delete",
+            COLLECTIONS_HINTS,
         )
         collections_screen = self.query_one("#collections-screen", CollectionsScreen)
         self.run_worker(collections_screen.refresh_collection(), exclusive=True)
@@ -709,6 +732,79 @@ class RootScreen(Screen):
             return
 
         self._do_start_new_collection(result.strip())
+
+    async def _run_export_flow(self) -> None:
+        self._pending_export = None
+        collections_screen = self.query_one(
+            "#collections-screen", CollectionsScreen
+        )
+        if not collections_screen.has_class("is-hidden"):
+            cid = collections_screen.get_selected_collection_id()
+            if cid is not None:
+                coll = await load_collection(cid)
+                if coll is not None:
+                    name = coll.name
+                    rows = db_items_to_export_rows(coll.items)
+                    if rows:
+                        self._pending_export = (name, rows)
+                        default_path = Path.cwd() / f"{sanitize_filename(name)}.xlsx"
+                        self.app.push_screen(
+                            InputPromptScreen(
+                                "Export to Excel",
+                                initial=str(default_path),
+                            ),
+                            self._on_export_path_done,
+                        )
+                    else:
+                        self._notify("Collection is empty.", "warning")
+                else:
+                    self._notify("Collection could not be loaded.", "warning")
+                return
+
+        name = get_working_collection_name()
+        working_items = get_working_collection()
+        rows = cards_item_to_export_rows(working_items)
+        if not rows:
+            self._notify("Working collection is empty.", "warning")
+            return
+        self._pending_export = (name, rows)
+        default_path = Path.cwd() / f"{sanitize_filename(name)}.xlsx"
+        self.app.push_screen(
+            InputPromptScreen(
+                "Export to Excel",
+                initial=str(default_path),
+            ),
+            self._on_export_path_done,
+        )
+
+    def _on_export_path_done(self, result: str | None) -> None:
+        if result is None:
+            self._pending_export = None
+            return
+        path_str = result.strip()
+        if not path_str:
+            self._notify("No path entered.", "warning")
+            return
+        pending = getattr(self, "_pending_export", None)
+        self._pending_export = None
+        if pending is None:
+            return
+        _name, rows = pending
+        self.run_worker(self._do_export(path_str, rows), exclusive=False)
+
+    async def _do_export(self, path_str: str, rows: list) -> None:
+        template_path = get_default_template_path()
+        output_path = Path(path_str)
+        try:
+            await asyncio.to_thread(
+                export_collection_to_excel,
+                rows,
+                template_path,
+                output_path,
+            )
+            self._notify(f"Exported to {output_path}", "success")
+        except Exception as e:
+            self._notify(_user_message("Export", e), "error")
 
     def _on_save_collection_done(self, result: str | None) -> None:
         if result is None or not result.strip():

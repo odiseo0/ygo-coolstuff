@@ -11,3 +11,6 @@ USER_AGENT = (
 )
 INPUT_FILE = "cards.txt"
 OUTPUT_FILE = "results.csv"
+
+EXCEL_TEMPLATE_FILENAME = "Template.xlsx"
+EXPORT_PLATFORM_NAME = "CoolStuffInc"

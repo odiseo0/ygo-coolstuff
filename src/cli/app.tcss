@@ -225,7 +225,7 @@ StatusBar {
 }
 
 #status-right {
-    width: 32;
+    width: 58;
     text-align: right;
     color: #9aa0a6;
     text-wrap: nowrap;

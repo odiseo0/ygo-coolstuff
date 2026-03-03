@@ -56,7 +56,7 @@
 - [x] Implement import parser for .txt and .ydk
 - [x] Wire import flow into UI (file list, preview, add all)
 - [x] Fuzzy Search
-- [ ] Add card image popup from results table
+- [x] Add card image popup from results table
 - [ ] Export to Excel template (final milestone)
 - [ ] Better UI, navigation and color schemes
 
