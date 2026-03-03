@@ -50,7 +50,7 @@ class SearchScreen(Container):
                 yield Static("", classes="spacer")
                 yield ResultsTable(id="results-table")
                 yield Static(
-                    "Space: select  a: add  u: undo  i: image  +/-: qty",
+                    "Space: select  a: add  ctrl+z: undo  u: image  +/-: qty",
                     classes="muted",
                     id=self._footer_hints_id,
                 )
@@ -182,7 +182,7 @@ class SearchScreen(Container):
         except Exception:
             return
 
-        base = "Space: select  a: add  u: undo  i: image  +/-: qty"
+        base = "Space: select  a: add  ctrl+z: undo  u: image  +/-: qty"
         state = self.get_pagination_state()
 
         if state is None:
@@ -416,6 +416,25 @@ class SearchScreen(Container):
             return None
 
         return row_key
+
+    def get_current_listing(self) -> CardListing | None:
+        table = self.query_one("#results-table", ResultsTable)
+
+        if table.row_count == 0:
+            return None
+
+        cursor_row = table.cursor_row
+        ordered_rows = table.ordered_rows
+
+        if cursor_row < 0 and ordered_rows:
+            table.move_cursor(row=0, column=0, scroll=True)
+            cursor_row = table.cursor_row
+
+        if cursor_row < 0 or cursor_row >= len(ordered_rows):
+            return None
+
+        row_key = self._normalize_row_key(ordered_rows[cursor_row].key)
+        return self._row_to_listing.get(row_key)
 
     def _key_for_adjust_or_remove(self) -> str | None:
         key = self.get_selected_working_item_key()

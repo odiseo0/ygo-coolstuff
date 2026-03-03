@@ -15,14 +15,16 @@ from src.cli.screens.input_prompt_screen import InputPromptScreen
 from src.cli.ui.messages import (
     AddSelectedRequested,
     BackRequested,
-    NavigateRequested,
     ImportRequested,
+    NavigateRequested,
     SearchInputFocused,
     SearchSubmitted,
     UndoRequested,
 )
 from src.cli.ui.mode_state import ModeState
 from src.cli.widgets import StatusBar, TitleBar
+from src.image_viewer import CardImageModal
+from src.services.ygopro_api import get_card_image_url_by_name
 from src.usecases.collections import (
     delete_collection,
     get_working_collection_id,
@@ -52,10 +54,12 @@ CSS_FILE = Path(__file__).parent / "app.tcss"
 
 DEFAULT_HINTS = "s: search  i: import  c: collections  q: quit"
 SEARCH_HINTS = (
-    "Space: select  a: add  u: undo  i: image  /: search  "
+    "Space: select  a: add  ctrl+z: undo  u: image  /: search  "
     "PgUp/PgDn or '['/']': page"
 )
-SELECT_HINTS = "SELECT: Space: toggle  a: add  u: undo  i: image  /: search  Esc: back"
+SELECT_HINTS = (
+    "SELECT: Space: toggle  a: add  ctrl+z: undo  u: image  /: search  Esc: back"
+)
 IMPORT_HINTS = "Enter: import  Esc: back"
 
 
@@ -70,7 +74,8 @@ class RootScreen(Screen):
         ("c", "show_collections", "Collections"),
         ("/", "focus_search", "Search"),
         ("?", "help", "Help"),
-        ("u", "undo", "Undo"),
+        Binding("ctrl+z", "undo", "Undo"),
+        ("u", "show_card_image", "Image"),
         ("a", "add_selected", "Add to collection"),
         ("space", "toggle_select", "Select row"),
         Binding("escape", "blur_or_back", "Blur/Back", priority=True),
@@ -275,7 +280,7 @@ class RootScreen(Screen):
                 ModeState(
                     mode="NAV",
                     breadcrumb="Home > Import",
-                    hints='Input file not found. Enter: import  Esc: back',
+                    hints="Input file not found. Enter: import  Esc: back",
                 )
             )
             return
@@ -489,6 +494,80 @@ class RootScreen(Screen):
 
     def action_undo(self) -> None:
         self.post_message(UndoRequested())
+
+    def action_show_card_image(self) -> None:
+        search_screen = self.query_one("#search-screen", SearchScreen)
+
+        if search_screen.has_class("is-hidden"):
+            return
+
+        listing = search_screen.get_current_listing()
+
+        if listing is None:
+            self._set_mode_state(
+                ModeState(
+                    mode="NAV",
+                    breadcrumb=self.mode_state.breadcrumb,
+                    hints="No card selected for image. " + SEARCH_HINTS,
+                )
+            )
+            return
+
+        name = listing.name.split(" - ")[0]
+
+        if not name:
+            self._set_mode_state(
+                ModeState(
+                    mode="NAV",
+                    breadcrumb=self.mode_state.breadcrumb,
+                    hints="Selected row has no card name. " + SEARCH_HINTS,
+                )
+            )
+            return
+
+        self._set_mode_state(
+            ModeState(
+                mode="NAV",
+                breadcrumb=self.mode_state.breadcrumb,
+                hints="Loading card image...",
+            )
+        )
+
+        async def _load_and_show() -> None:
+            try:
+                image_url = await get_card_image_url_by_name(name)
+            except Exception as error:
+                self._notify(_user_message("Card image lookup", error), "error")
+                self._set_mode_state(
+                    ModeState(
+                        mode="NAV",
+                        breadcrumb=self.mode_state.breadcrumb,
+                        hints=SEARCH_HINTS,
+                    )
+                )
+                return
+
+            if image_url is None:
+                self._notify("No YGOPRO image found for this card.", "info")
+                self._set_mode_state(
+                    ModeState(
+                        mode="NAV",
+                        breadcrumb=self.mode_state.breadcrumb,
+                        hints=SEARCH_HINTS,
+                    )
+                )
+                return
+
+            await self.app.push_screen(CardImageModal(image_url))
+            self._set_mode_state(
+                ModeState(
+                    mode="NAV",
+                    breadcrumb=self.mode_state.breadcrumb,
+                    hints=SEARCH_HINTS,
+                )
+            )
+
+        self.run_worker(_load_and_show(), exclusive=False)
 
     def action_add_selected(self) -> None:
         self.post_message(AddSelectedRequested())
