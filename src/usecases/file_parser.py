@@ -31,7 +31,7 @@ async def parse_file(file_path: str) -> list[str]:
 
 
 async def parse_ydk_file(file_path: str) -> list[str]:
-    card_id_pattern = re.compile(r"^\d+$")
+    card_id_pattern = re.compile(r"^(\d+)$")
     cards: list[str] = []
     seen: set[str] = set()
 

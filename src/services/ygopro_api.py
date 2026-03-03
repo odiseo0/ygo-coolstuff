@@ -1,8 +1,12 @@
+import logging
 from typing import TypedDict
 
-from httpx import AsyncClient
+from httpx import AsyncClient, HTTPStatusError, RequestError
 
 from src.utils import to_slug
+
+
+LOG = logging.getLogger(__name__)
 
 
 # docs: https://ygoprodeck.com/api-guide/
@@ -36,8 +40,51 @@ async def fuzzy_search(query: str) -> list[YGROPROResponse]:
     return response.json()
 
 
-async def get_card_by_id(id: int) -> YGOPROCard:
+async def get_card_by_id(id: int) -> YGROPROResponse:
     async with AsyncClient() as client:
         response = await client.get(f"{YGO_API_URL}?id={id}")
 
     return response.json()
+
+
+async def safe_get_card_by_id(id: int) -> YGROPROResponse | None:
+    try:
+        return await get_card_by_id(id)
+    except Exception:
+        LOG.exception("safe_get_card_by_id: request failed for id %s", id)
+        return None
+
+
+async def get_cards_by_ids(ids: list[int]) -> list[YGOPROCard]:
+    if not ids:
+        return []
+
+    joined_ids = ",".join(str(id) for id in ids)
+
+    try:
+        async with AsyncClient() as client:
+            response = await client.get(f"{YGO_API_URL}?id={joined_ids}")
+            response.raise_for_status()
+    except (HTTPStatusError, RequestError) as _:
+        LOG.exception("get_cards_by_ids: request failed for ids %s", ids)
+        return []
+
+    try:
+        payload = response.json()
+    except Exception:
+        LOG.exception("get_cards_by_ids: invalid JSON for ids %s", ids)
+        return []
+
+    data = payload.get("data")
+
+    if not isinstance(data, list):
+        LOG.warning("get_cards_by_ids: missing data field for ids %s", ids)
+        return []
+
+    cards: list[YGOPROCard] = []
+
+    for entry in data:
+        if isinstance(entry, dict):
+            cards.append(entry)
+
+    return cards

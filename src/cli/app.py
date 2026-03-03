@@ -7,7 +7,7 @@ from textual.binding import Binding
 from textual.containers import Container, Vertical
 from textual.reactive import reactive
 from textual.screen import Screen
-from textual.widgets import Input
+from textual.widgets import Input, OptionList
 
 from src.cli.screens import CollectionsScreen, HomeScreen, ImportScreen, SearchScreen
 from src.cli.screens.confirm_prompt_screen import ConfirmPromptScreen
@@ -16,6 +16,7 @@ from src.cli.ui.messages import (
     AddSelectedRequested,
     BackRequested,
     NavigateRequested,
+    ImportRequested,
     SearchInputFocused,
     SearchSubmitted,
     UndoRequested,
@@ -33,6 +34,7 @@ from src.usecases.collections import (
     undo_last,
 )
 from src.usecases.search_cards import search_cards
+from src.usecases.ydk_import import ImportDeckError, import_deck_file
 
 
 LOG = logging.getLogger(__name__)
@@ -51,6 +53,7 @@ CSS_FILE = Path(__file__).parent / "app.tcss"
 DEFAULT_HINTS = "s: search  i: import  c: collections  q: quit"
 SEARCH_HINTS = "Space: select  a: add  u: undo  i: image  /: search"
 SELECT_HINTS = "SELECT: Space: toggle  a: add  u: undo  i: image  /: search  Esc: back"
+IMPORT_HINTS = "Enter: import  Esc: back"
 
 
 class RootScreen(Screen):
@@ -156,6 +159,9 @@ class RootScreen(Screen):
             home_screen = self.query_one("#home-screen", HomeScreen)
             self.run_worker(home_screen.refresh_home(), exclusive=False)
 
+        if screen_id == "import-screen":
+            self.query_one("#import-file-list", OptionList).focus()
+
         self._set_mode_state(ModeState(mode="NAV", breadcrumb=breadcrumb, hints=hints))
 
     def on_navigate_requested(self, message: NavigateRequested) -> None:
@@ -165,7 +171,7 @@ class RootScreen(Screen):
             self._show_screen(
                 "import-screen",
                 "Home > Import",
-                "Enter: import  a: add all  Esc: back",
+                IMPORT_HINTS,
             )
         elif message.screen_id == "collections-screen":
             self._show_screen(
@@ -220,6 +226,75 @@ class RootScreen(Screen):
             ModeState(
                 mode="NAV",
                 breadcrumb=self.mode_state.breadcrumb,
+                hints=hints,
+            )
+        )
+
+    def on_import_requested(self, message: ImportRequested) -> None:
+        file_path = message.path
+        file_name = Path(file_path).name
+
+        self._set_mode_state(
+            ModeState(
+                mode="NAV",
+                breadcrumb=self.mode_state.breadcrumb,
+                hints=f'Importing "{file_name}"...',
+            )
+        )
+
+        self.run_worker(self._do_import(file_path), exclusive=False)
+
+    async def _do_import(self, file_path: str) -> None:
+        file_name = Path(file_path).name
+
+        try:
+            listings = await import_deck_file(file_path)
+        except FileNotFoundError as error:
+            self._notify(_user_message("Import", error), "error")
+            import_screen = self.query_one("#import-screen", ImportScreen)
+            import_screen._refresh_file_list()
+            self._set_mode_state(
+                ModeState(
+                    mode="NAV",
+                    breadcrumb="Home > Import",
+                    hints='Input file not found. Enter: import  Esc: back',
+                )
+            )
+            return
+        except ImportDeckError as error:
+            self._notify(_user_message("Import", error), "error")
+            self._set_mode_state(
+                ModeState(
+                    mode="NAV",
+                    breadcrumb="Home > Import",
+                    hints=f'Import failed for "{file_name}". Enter: import  Esc: back',
+                )
+            )
+            return
+        except Exception as error:
+            self._notify(_user_message("Import", error), "error")
+            self._set_mode_state(
+                ModeState(
+                    mode="NAV",
+                    breadcrumb="Home > Import",
+                    hints=f'Import failed for "{file_name}". Enter: import  Esc: back',
+                )
+            )
+            return
+
+        search_screen = self.query_one("#search-screen", SearchScreen)
+        search_screen.render_results(listings)
+
+        if listings:
+            hints = f'Imported {len(listings)} listings from "{file_name}"'
+        else:
+            hints = f'No listings imported from "{file_name}"'
+
+        self._show_screen("search-screen", "Home > Import > Results", SEARCH_HINTS)
+        self._set_mode_state(
+            ModeState(
+                mode="NAV",
+                breadcrumb="Home > Import > Results",
                 hints=hints,
             )
         )
@@ -375,7 +450,7 @@ class RootScreen(Screen):
         self._show_screen(
             "import-screen",
             "Home > Import",
-            "Enter: import  a: add all  Esc: back",
+            IMPORT_HINTS,
         )
 
     def action_show_collections(self) -> None:

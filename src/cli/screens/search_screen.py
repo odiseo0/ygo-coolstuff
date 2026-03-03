@@ -293,6 +293,7 @@ class SearchScreen(Container):
 
         items = make_collection_items_from_listings(listings, qty=1)
         add_items(items)
+
         self._selected_row_keys.clear()
 
         self._recently_added_row_keys.update(added_row_keys)

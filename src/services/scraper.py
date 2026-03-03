@@ -10,21 +10,32 @@ from src.utils.constants import BASE_URL, REQUEST_TIMEOUT_SECONDS, USER_AGENT
 from src.utils.utils import deduplicate_listings
 
 
+MAX_SCRAPE_CONCURRENCY = 10
+
+
 async def scrape_cards(cards: list[str]) -> list[CardListing]:
     all_listings: list[CardListing] = []
+
+    if not cards:
+        return all_listings
 
     async with AsyncClient(
         headers={"User-Agent": USER_AGENT},
         timeout=REQUEST_TIMEOUT_SECONDS,
         follow_redirects=True,
     ) as client:
+        semaphore = asyncio.Semaphore(MAX_SCRAPE_CONCURRENCY)
         tasks: list[asyncio.Task] = []
         card_names: list[str] = []
+
+        async def _bounded_fetch(url: str) -> str | None:
+            async with semaphore:
+                return await fetch_card_page(client, url)
 
         for card_name in cards:
             encoded_name = quote(card_name, safe="").replace("%20", "+")
             url = f"{BASE_URL}{encoded_name}"
-            task = asyncio.create_task(fetch_card_page(client, url))
+            task = asyncio.create_task(_bounded_fetch(url))
             tasks.append(task)
             card_names.append(card_name)
 
