@@ -13,8 +13,8 @@ from src.image_viewer.pipeline import HalfBlockImage, RenderOptions, build_rende
 class CardImageViewer(Widget):
     DEFAULT_CSS = """
     CardImageViewer {
-        background: black;
-        color: white;
+        background: #050505;
+        color: #ffd75f;
     }
     """
 

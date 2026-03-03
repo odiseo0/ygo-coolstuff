@@ -22,7 +22,7 @@ from src.usecases.collections import (
 
 
 ADDED_HIGHLIGHT_TTL = 2.0
-ADDED_HIGHLIGHT_STYLE = "bold reverse green"
+ADDED_HIGHLIGHT_STYLE = "bold reverse #b58900"
 
 RESULTS_TABLE_COLUMNS = ("Card Name", "Code", "Price", "Rarity", "Condition", "Stock")
 

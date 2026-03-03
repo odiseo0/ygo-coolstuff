@@ -15,13 +15,13 @@ class CardImageModal(ModalScreen[None]):
     DEFAULT_CSS = """
     CardImageModal {
         align: center middle;
-        background: #00000099;
+        background: #05050599;
     }
 
     CardImageModal > CardImageViewer {
         width: 85%;
         height: 85%;
-        border: round white;
+        border: round #ffd75f;
     }
     """
 

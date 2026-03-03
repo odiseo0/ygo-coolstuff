@@ -1,6 +1,15 @@
+/* Amber Terminal palette (c0–c5): bg #050505, #141414, #202020 | border/muted #4c4c40 | fg #b58900 | accent #ffd75f */
+
 Screen {
-    background: #000000;
-    color: #ffffff;
+    background: #050505;
+    color: #b58900;
+    scrollbar-color: #4c4c40;
+    scrollbar-color-hover: #b58900;
+    scrollbar-color-active: #ffd75f;
+    scrollbar-background: #050505;
+    scrollbar-background-hover: #141414;
+    scrollbar-background-active: #202020;
+    scrollbar-corner-color: #050505;
 }
 
 #app-root {
@@ -11,17 +20,18 @@ Screen {
 #title-bar {
     height: 1;
     padding: 0 1;
-    border-bottom: solid #2a2a2a;
+    border-bottom: solid #4c4c40;
     align: center middle;
     width: 100%;
 }
 
 #title-left {
     text-style: bold;
+    color: #ffd75f;
 }
 
 #title-right {
-    color: #9aa0a6;
+    color: #4c4c40;
     text-align: right;
     width: 1fr;
 }
@@ -30,7 +40,7 @@ Screen {
     height: 1fr;
     padding: 0 1;
     align: left top;
-    border-bottom: solid #2a2a2a;
+    border-bottom: solid #4c4c40;
     layout: vertical;
 }
 
@@ -51,17 +61,17 @@ Screen {
 }
 
 .panel {
-    border: solid #2a2a2a;
+    border: solid #4c4c40;
     padding: 1 1;
 }
 
 .panel-title {
-    color: #9aa0a6;
+    color: #4c4c40;
     margin-bottom: 1;
 }
 
 .ascii {
-    color: #d7d7d7;
+    color: #b58900;
     margin-bottom: 1;
 }
 
@@ -84,7 +94,7 @@ Screen {
 }
 
 .muted {
-    color: #9aa0a6;
+    color: #4c4c40;
 }
 
 .spacer {
@@ -123,9 +133,9 @@ Screen {
 #search-input {
     height: 3;
     padding: 0 1;
-    border: solid #2a2a2a;
-    background: #0b0b0b;
-    color: #ffffff;
+    border: solid #4c4c40;
+    background: #202020;
+    color: #b58900;
 }
 
 #results-table {
@@ -136,17 +146,24 @@ Screen {
 }
 
 DataTable {
-    border: solid #2a2a2a;
-    background: #000000;
-    color: #ffffff;
+    border: solid #4c4c40;
+    background: #050505;
+    color: #b58900;
+    scrollbar-color: #4c4c40;
+    scrollbar-color-hover: #b58900;
+    scrollbar-color-active: #ffd75f;
+    scrollbar-background: #050505;
+    scrollbar-background-hover: #141414;
+    scrollbar-background-active: #202020;
+    scrollbar-corner-color: #050505;
 }
 
 DataTable > .datatable--header {
-    color: #9aa0a6;
+    color: #ffd75f;
 }
 
 DataTable > .datatable--cursor {
-    background: #1f1f1f;
+    background: #3d3600;
 }
 
 #collections-detail-table {
@@ -168,13 +185,48 @@ DataTable > .datatable--cursor {
     width: 1fr;
 }
 
+OptionList {
+    border: solid #4c4c40;
+    background: #202020;
+    color: #b58900;
+    scrollbar-color: #4c4c40;
+    scrollbar-color-hover: #b58900;
+    scrollbar-color-active: #ffd75f;
+    scrollbar-background: #202020;
+    scrollbar-background-hover: #141414;
+    scrollbar-background-active: #202020;
+    scrollbar-corner-color: #050505;
+}
+
+OptionList > .option-list--option {
+    color: #b58900;
+}
+
+OptionList > .option-list--option-highlighted {
+    background: #3d3600;
+    color: #ffd75f;
+}
+
+OptionList > .option-list--option-hover {
+    background: #3d3600;
+    color: #ffd75f;
+}
+
+OptionList > .option-list--option-disabled {
+    color: #4c4c40;
+}
+
+OptionList > .option-list--separator {
+    color: #4c4c40;
+}
+
 .table {
-    border: solid #2a2a2a;
+    border: solid #4c4c40;
     padding: 0 1;
 }
 
 .table-header {
-    color: #9aa0a6;
+    color: #ffd75f;
     text-style: bold;
     height: 1;
 }
@@ -185,12 +237,12 @@ DataTable > .datatable--cursor {
 }
 
 .row-selected {
-    background: #1f1f1f;
+    background: #3d3600;
 }
 
 .row-added {
-    background: #114a24;
-    color: #e7f6eb;
+    background: #3d3600;
+    color: #ffd75f;
 }
 
 .is-hidden {
@@ -202,7 +254,7 @@ DataTable > .datatable--cursor {
     padding: 0 1;
     align: center middle;
     width: 100%;
-    background: #0b0b0b;
+    background: #141414;
 }
 
 TitleBar {
@@ -216,6 +268,7 @@ StatusBar {
 #status-left {
     width: 12;
     text-style: bold;
+    color: #ffd75f;
 }
 
 #status-center {
@@ -227,6 +280,6 @@ StatusBar {
 #status-right {
     width: 58;
     text-align: right;
-    color: #9aa0a6;
+    color: #4c4c40;
     text-wrap: nowrap;
 }
