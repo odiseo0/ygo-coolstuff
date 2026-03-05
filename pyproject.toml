@@ -1,7 +1,11 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "coolstuffscrape"
 version = "0.1.0"
-description = "Default template for PDM package"
+description = "Terminal UI for managing card collections and exporting to Excel"
 authors = [
     {name = "Pedro", email = "87550035+odiseo0@users.noreply.github.com"},
 ]
@@ -14,12 +18,24 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "openpyxl>=3.1.5",
     "pillow>=12.1.1",
-    "textual-dev>=1.8.0",
+    "platformdirs>=4.0.0",
 ]
-requires-python = "==3.13.*"
+requires-python = ">=3.13"
 readme = "README.md"
 license = {text = "MIT"}
 
+[project.optional-dependencies]
+dev = ["textual-dev>=1.8.0"]
+
+[project.scripts]
+coolstuffscrape = "src.cli.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.setuptools.package-data]
+src = ["data/*.xlsx"]
 
 [tool.pdm]
 distribution = false

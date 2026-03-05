@@ -1,14 +1,11 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from aiosqlite import connect
 from aiosqlite.core import Connection
 
-
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_DB_PATH = _PROJECT_ROOT / "db" / "card_database.db"
+from src.utils.app_dirs import get_db_path
 
 
 @dataclass
@@ -34,8 +31,29 @@ class Collection:
 
 @asynccontextmanager
 async def session() -> AsyncIterator[Connection]:
-    async with connect(str(_DB_PATH)) as db:
+    async with connect(str(get_db_path())) as db:
         yield db
+
+
+COLLECTIONS_SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS collections ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)"
+)
+COLLECTION_ITEMS_SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS collection_items ("
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, collection_id INTEGER NOT NULL, "
+    "card_id INTEGER, card_name TEXT, card_set TEXT, card_code TEXT, "
+    "card_price TEXT, card_rarity TEXT, card_condition TEXT, quantity INTEGER NOT NULL, "
+    "FOREIGN KEY (collection_id) REFERENCES collections(id))"
+)
+
+
+async def init_db() -> None:
+    db_path = get_db_path()
+    async with connect(str(db_path)) as db:
+        await db.execute(COLLECTIONS_SCHEMA)
+        await db.execute(COLLECTION_ITEMS_SCHEMA)
+        await db.commit()
 
 
 async def get_collection(collection_id: int) -> Collection | None:

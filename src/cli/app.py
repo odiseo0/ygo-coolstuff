@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -47,9 +48,19 @@ from src.services.excel_export import (
 from src.usecases.search_cards import search_cards_fuzzy
 from src.usecases.ydk_import import ImportDeckError, import_deck_file
 from src.utils.utils import sanitize_filename
+from src.models.db_models import init_db
 
 
 LOG = logging.getLogger(__name__)
+
+
+def main() -> None:
+    """Entry point for the console script."""
+    if len(sys.argv) > 1 and sys.argv[1] == "init":
+        asyncio.run(init_db())
+        return
+    app = CardScraperApp()
+    app.run()
 
 
 def _user_message(operation: str, error: Exception) -> str:
@@ -821,4 +832,5 @@ class CardScraperApp(App):
     TITLE = "CoolStuffInc Card Scraper"
 
     async def on_mount(self) -> None:
+        await init_db()
         await self.push_screen(RootScreen())

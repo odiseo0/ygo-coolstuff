@@ -1,9 +1,19 @@
 ## coolstuffscrape
 
+### Install and run
+
+- **Install** (from repo): `pip install .`  
+  Or from PyPI (when published): `pip install coolstuffscrape`
+- **Run**: `coolstuffscrape`  
+  On first run the app creates the database and app data directory automatically.
+- **Optional setup**: `coolstuffscrape init` — creates the database and app data dir only (no TUI). Use for scripting or CI.
+
+One-liner from repo: `pip install . && coolstuffscrape`
+
 ### Overview
 **coolstuffscrape** is a terminal user interface for managing card collections without constantly switching between browser tabs. Instead of searching on a website and juggling multiple pages, you stay inside this app, search for cards, and build collections that can later be exported into a template.
 
-### Core flow
+### flow
 - **Search**: Press `s` to enter Search then press `/` to focus the search, then search for the card you want.
 - **Browse results**: Use the arrow keys to move through the results table.
 - **Add cards**: Press `space` to select a row and then press `a` to add that card to the current collection.

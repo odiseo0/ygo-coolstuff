@@ -1,4 +1,6 @@
+import shutil
 from dataclasses import dataclass
+from importlib.resources import as_file, files
 from pathlib import Path
 from urllib.parse import quote
 
@@ -6,14 +8,21 @@ from openpyxl import load_workbook
 
 from src.models import cards
 from src.models.db_models import CollectionItem as DbCollectionItem
-from src.utils.constants import BASE_URL, EXCEL_TEMPLATE_FILENAME, EXPORT_PLATFORM_NAME
+from src.utils.app_dirs import get_template_path
+from src.utils.constants import BASE_URL, EXPORT_PLATFORM_NAME
 from src.utils.utils import trim_card_name
 
 
 def get_default_template_path() -> Path:
-    """Template path from project root."""
-    project_root = Path(__file__).resolve().parent.parent.parent
-    return project_root / EXCEL_TEMPLATE_FILENAME
+    app_path = get_template_path()
+    pkg_tpl = files("src").joinpath("data", "Template.xlsx")
+
+    if pkg_tpl.is_file():
+        with as_file(pkg_tpl) as p:
+            if not app_path.exists() or p.stat().st_mtime > app_path.stat().st_mtime:
+                shutil.copy2(p, app_path)
+
+    return app_path
 
 
 EXCEL_HEADER_CANTIDAD = "Cantidad"
