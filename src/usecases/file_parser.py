@@ -17,12 +17,15 @@ async def parse_file(file_path: str) -> list[str]:
     async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
         async for line in f:
             line = line.strip()
+
             if not line or line.endswith(":"):
                 continue
 
             match = card_pattern.match(line)
+
             if match:
                 card_name = match.group(1).strip()
+
                 if card_name not in seen:
                     cards.append(card_name)
                     seen.add(card_name)
