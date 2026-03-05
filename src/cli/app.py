@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import shutil
 import sys
 from pathlib import Path
 from typing import Literal
@@ -10,6 +11,7 @@ from textual.containers import Container, Vertical
 from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import Input, OptionList
+from textual.worker import Worker, WorkerState
 
 from src.cli.screens import CollectionsScreen, HomeScreen, ImportScreen, SearchScreen
 from src.cli.screens.confirm_prompt_screen import ConfirmPromptScreen
@@ -26,6 +28,13 @@ from src.cli.ui.messages import (
 from src.cli.ui.mode_state import ModeState
 from src.cli.widgets import StatusBar, TitleBar
 from src.image_viewer import CardImageModal
+from src.models.db_models import init_db
+from src.services.excel_export import (
+    cards_item_to_export_rows,
+    db_items_to_export_rows,
+    export_collection_to_excel,
+    get_default_template_path,
+)
 from src.services.ygopro_api import get_card_image_url_by_name
 from src.usecases.collections import (
     delete_collection,
@@ -39,16 +48,9 @@ from src.usecases.collections import (
     start_new_collection,
     undo_last,
 )
-from src.services.excel_export import (
-    cards_item_to_export_rows,
-    db_items_to_export_rows,
-    export_collection_to_excel,
-    get_default_template_path,
-)
 from src.usecases.search_cards import search_cards_fuzzy
 from src.usecases.ydk_import import ImportDeckError, import_deck_file
 from src.utils.utils import sanitize_filename
-from src.models.db_models import init_db
 
 
 LOG = logging.getLogger(__name__)
@@ -71,12 +73,44 @@ def _user_message(operation: str, error: Exception) -> str:
     return f"{operation} failed. Please try again."
 
 
+def _validate_import_path(path_str: str) -> tuple[bool, str]:
+    trimmed = path_str.strip()
+    if not trimmed:
+        return False, "No path entered."
+    p = Path(trimmed).resolve()
+    if not p.is_file():
+        return False, "File not found or not a file."
+    if p.suffix.lower() not in {".ydk", ".txt"}:
+        return False, "File must be .ydk or .txt."
+    return True, str(p)
+
+
+def _ask_open_deck_file() -> tuple[bool, str | None]:
+    """Run native file dialog for .ydk/.txt. Returns (tk_available, path_or_none). Runs in thread."""
+    try:
+        import tkinter
+        from tkinter import filedialog
+    except ImportError:
+        return False, None
+    root = tkinter.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    path = filedialog.askopenfilename(
+        title="Select deck file (.ydk or .txt)",
+        filetypes=[
+            ("Deck files (.ydk, .txt)", "*.ydk *.txt"),
+            ("YDK decks", "*.ydk"),
+            ("Text lists", "*.txt"),
+        ],
+    )
+    root.destroy()
+    return True, (path if path and path.strip() else None)
+
+
 CSS_FILE = Path(__file__).parent / "app.tcss"
 
 DEFAULT_HINTS = "s: search  i: import  c: collections  q: quit"
-COLLECTIONS_HINTS = (
-    "Enter: load  n: new  r: rename  d: delete  x: export"
-)
+COLLECTIONS_HINTS = "Enter: load  n: new  r: rename  d: delete  x: export"
 SEARCH_HINTS = (
     "Space: select  a: add  ctrl+z: undo  u: image  /: search  "
     "PgUp/PgDn or '['/']': page  Ctrl+s: save  +/-: qty  d: remove  e: rename"
@@ -84,7 +118,7 @@ SEARCH_HINTS = (
 SELECT_HINTS = (
     "SELECT: Space: toggle  a: add  ctrl+z: undo  u: image  /: search  Esc: back"
 )
-IMPORT_HINTS = "Enter: import  Esc: back"
+IMPORT_HINTS = "Enter: import  o: path  b: browse  Esc: back"
 
 
 class RootScreen(Screen):
@@ -95,6 +129,8 @@ class RootScreen(Screen):
         ("q", "quit", "Quit"),
         ("s", "show_search", "Search"),
         ("i", "show_import", "Import"),
+        ("o", "import_by_path", "Open path"),
+        ("b", "import_by_browse", "Browse"),
         ("c", "show_collections", "Collections"),
         ("/", "focus_search", "Search"),
         ("?", "help", "Help"),
@@ -272,8 +308,101 @@ class RootScreen(Screen):
     def on_import_requested(self, message: ImportRequested) -> None:
         self.run_worker(self._do_import(message.path), exclusive=False)
 
+    def action_import_by_path(self) -> None:
+        import_screen = self.query_one("#import-screen", ImportScreen)
+
+        if import_screen.has_class("is-hidden"):
+            return
+
+        self.app.push_screen(
+            InputPromptScreen("Path to .ydk or .txt file:", initial=""),
+            self._on_import_path_done,
+        )
+
+    def _on_import_path_done(self, result: str | None) -> None:
+        if result is None:
+            return
+
+        valid, path_or_error = _validate_import_path(result)
+
+        if not valid:
+            self._notify(path_or_error, "error")
+            return
+
+        self.post_message(ImportRequested(path_or_error))
+
+    def action_import_by_browse(self) -> None:
+        import_screen = self.query_one("#import-screen", ImportScreen)
+
+        if import_screen.has_class("is-hidden"):
+            return
+
+        self.run_worker(
+            self._open_import_file_dialog(),
+            name="import_file_dialog",
+        )
+
+    async def _open_import_file_dialog(self) -> tuple[bool, str | None]:
+        return await asyncio.to_thread(_ask_open_deck_file)
+
+    def _on_import_file_dialog_done(self, result: tuple[bool, str | None]) -> None:
+        tk_available, path = result
+
+        if not tk_available:
+            self._notify(
+                "File dialog not available on this system. Use 'o' to enter a path.",
+                "warning",
+            )
+            return
+
+        if path is None:
+            return
+
+        valid, path_or_error = _validate_import_path(path)
+
+        if not valid:
+            self._notify(path_or_error, "error")
+            return
+
+        self.post_message(ImportRequested(path_or_error))
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        if (
+            event.worker.name != "import_file_dialog"
+            or event.state != WorkerState.SUCCESS
+        ):
+            return
+
+        result = event.worker.result
+
+        if isinstance(result, tuple) and len(result) == 2:
+            self._on_import_file_dialog_done(result)
+
     async def _do_import(self, file_path: str) -> None:
         file_name = Path(file_path).name
+        cwd = Path.cwd().resolve()
+        source = Path(file_path).resolve()
+
+        if source.parent != cwd:
+            dest = cwd / sanitize_filename(file_name)
+            self._notify("Copying file... Searching for cards.", "info")
+
+            try:
+                shutil.copy2(source, dest)
+            except OSError as error:
+                self._notify(_user_message("Import", error), "error")
+                self._set_mode_state(
+                    ModeState(
+                        mode="NAV",
+                        breadcrumb="Home > Import",
+                        hints=IMPORT_HINTS,
+                    )
+                )
+                return
+
+            file_path = str(dest)
+        else:
+            self._notify("Searching for cards...", "info")
 
         try:
             listings = await import_deck_file(file_path)
@@ -321,6 +450,9 @@ class RootScreen(Screen):
         else:
             self._notify(f'No listings imported from "{file_name}"', "info")
 
+        import_screen = self.query_one("#import-screen", ImportScreen)
+        import_screen._refresh_file_list()
+
         self._show_screen("search-screen", "Home > Import > Results", SEARCH_HINTS)
 
     def on_add_selected_requested(self, _: AddSelectedRequested) -> None:
@@ -349,6 +481,7 @@ class RootScreen(Screen):
             return COLLECTIONS_HINTS
         if "Import" in breadcrumb:
             return IMPORT_HINTS
+
         return SEARCH_HINTS
 
     def on_undo_requested(self, _: UndoRequested) -> None:
@@ -717,16 +850,18 @@ class RootScreen(Screen):
 
     async def _run_export_flow(self) -> None:
         self._pending_export = None
-        collections_screen = self.query_one(
-            "#collections-screen", CollectionsScreen
-        )
+        collections_screen = self.query_one("#collections-screen", CollectionsScreen)
+
         if not collections_screen.has_class("is-hidden"):
             cid = collections_screen.get_selected_collection_id()
+
             if cid is not None:
                 coll = await load_collection(cid)
+
                 if coll is not None:
                     name = coll.name
                     rows = db_items_to_export_rows(coll.items)
+
                     if rows:
                         self._pending_export = (name, rows)
                         default_path = Path.cwd() / f"{sanitize_filename(name)}.xlsx"
@@ -746,11 +881,15 @@ class RootScreen(Screen):
         name = get_working_collection_name()
         working_items = get_working_collection()
         rows = cards_item_to_export_rows(working_items)
+
         if not rows:
             self._notify("Working collection is empty.", "warning")
             return
+
         self._pending_export = (name, rows)
+
         default_path = Path.cwd() / f"{sanitize_filename(name)}.xlsx"
+
         self.app.push_screen(
             InputPromptScreen(
                 "Export to Excel",
@@ -763,20 +902,26 @@ class RootScreen(Screen):
         if result is None:
             self._pending_export = None
             return
+
         path_str = result.strip()
+
         if not path_str:
             self._notify("No path entered.", "warning")
             return
+
         pending = getattr(self, "_pending_export", None)
         self._pending_export = None
+
         if pending is None:
             return
+
         _name, rows = pending
         self.run_worker(self._do_export(path_str, rows), exclusive=False)
 
     async def _do_export(self, path_str: str, rows: list) -> None:
         template_path = get_default_template_path()
         output_path = Path(path_str)
+
         try:
             await asyncio.to_thread(
                 export_collection_to_excel,

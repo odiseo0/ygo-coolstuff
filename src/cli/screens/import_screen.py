@@ -28,7 +28,9 @@ class ImportScreen(Container):
                 yield Static("", id="import-list-status", classes="muted")
                 yield OptionList(id="import-file-list")
             with Container(classes="panel split-panel", id="import-preview"):
-                yield Static("Preview", classes="panel-title", id="import-preview-title")
+                yield Static(
+                    "Preview", classes="panel-title", id="import-preview-title"
+                )
                 yield Container(id="import-preview-content")
 
     def on_mount(self) -> None:
@@ -74,7 +76,9 @@ class ImportScreen(Container):
 
         option_list.add_options(options)
 
-        if self._selected_index is None or not (0 <= self._selected_index < len(self._files)):
+        if self._selected_index is None or not (
+            0 <= self._selected_index < len(self._files)
+        ):
             self._selected_index = 0
 
         option_list.highlighted = self._selected_index
