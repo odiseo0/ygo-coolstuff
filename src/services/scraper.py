@@ -12,8 +12,8 @@ from src.utils.constants import BASE_URL, REQUEST_TIMEOUT_SECONDS, USER_AGENT
 from src.utils.utils import deduplicate_listings, to_slug
 
 
-MAX_SCRAPE_CONCURRENCY = 20
-PARSE_MAX_WORKERS = 8
+MAX_SCRAPE_CONCURRENCY = 50
+PARSE_MAX_WORKERS = 32
 CARD_LISTINGS_TTL_SECONDS = 600
 
 _SCRAPER_CLIENT: AsyncClient | None = None
