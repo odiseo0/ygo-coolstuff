@@ -68,7 +68,7 @@ COLLECTIONS_HINTS = (
 )
 SEARCH_HINTS = (
     "Space: select  a: add  ctrl+z: undo  u: image  /: search  "
-    "PgUp/PgDn or '['/']': page"
+    "PgUp/PgDn or '['/']': page  Ctrl+s: save  +/-: qty  d: remove  e: rename"
 )
 SELECT_HINTS = (
     "SELECT: Space: toggle  a: add  ctrl+z: undo  u: image  /: search  Esc: back"
@@ -221,14 +221,6 @@ class RootScreen(Screen):
         )
 
     async def on_search_submitted(self, message: SearchSubmitted) -> None:
-        self._set_mode_state(
-            ModeState(
-                mode="NAV",
-                breadcrumb=self.mode_state.breadcrumb,
-                hints="Searching...",
-            )
-        )
-
         try:
             listings = await search_cards_fuzzy(message.query)
         except Exception as e:
@@ -247,40 +239,27 @@ class RootScreen(Screen):
 
         if listings:
             pagination_state = search_screen.get_pagination_state()
-
             if pagination_state is not None:
                 current_page, total_pages = pagination_state
-                prefix = (
-                    f"Found {len(listings)} listings "
-                    f"(Page {current_page}/{total_pages}). "
+                self._notify(
+                    f"Found {len(listings)} listings (Page {current_page}/{total_pages})",
+                    "info",
                 )
             else:
-                prefix = f"Found {len(listings)} listings. "
-
-            hints = prefix + SEARCH_HINTS
+                self._notify(f"Found {len(listings)} listings", "info")
         else:
-            hints = "No results"
+            self._notify("No results", "info")
+
         self._set_mode_state(
             ModeState(
                 mode="NAV",
                 breadcrumb=self.mode_state.breadcrumb,
-                hints=hints,
+                hints=SEARCH_HINTS,
             )
         )
 
     def on_import_requested(self, message: ImportRequested) -> None:
-        file_path = message.path
-        file_name = Path(file_path).name
-
-        self._set_mode_state(
-            ModeState(
-                mode="NAV",
-                breadcrumb=self.mode_state.breadcrumb,
-                hints=f'Importing "{file_name}"...',
-            )
-        )
-
-        self.run_worker(self._do_import(file_path), exclusive=False)
+        self.run_worker(self._do_import(message.path), exclusive=False)
 
     async def _do_import(self, file_path: str) -> None:
         file_name = Path(file_path).name
@@ -295,7 +274,7 @@ class RootScreen(Screen):
                 ModeState(
                     mode="NAV",
                     breadcrumb="Home > Import",
-                    hints="Input file not found. Enter: import  Esc: back",
+                    hints=IMPORT_HINTS,
                 )
             )
             return
@@ -305,7 +284,7 @@ class RootScreen(Screen):
                 ModeState(
                     mode="NAV",
                     breadcrumb="Home > Import",
-                    hints=f'Import failed for "{file_name}". Enter: import  Esc: back',
+                    hints=IMPORT_HINTS,
                 )
             )
             return
@@ -315,7 +294,7 @@ class RootScreen(Screen):
                 ModeState(
                     mode="NAV",
                     breadcrumb="Home > Import",
-                    hints=f'Import failed for "{file_name}". Enter: import  Esc: back',
+                    hints=IMPORT_HINTS,
                 )
             )
             return
@@ -324,18 +303,14 @@ class RootScreen(Screen):
         search_screen.render_results(listings)
 
         if listings:
-            hints = f'Imported {len(listings)} listings from "{file_name}"'
+            self._notify(
+                f'Imported {len(listings)} listings from "{file_name}"',
+                "success",
+            )
         else:
-            hints = f'No listings imported from "{file_name}"'
+            self._notify(f'No listings imported from "{file_name}"', "info")
 
         self._show_screen("search-screen", "Home > Import > Results", SEARCH_HINTS)
-        self._set_mode_state(
-            ModeState(
-                mode="NAV",
-                breadcrumb="Home > Import > Results",
-                hints=hints,
-            )
-        )
 
     def on_add_selected_requested(self, _: AddSelectedRequested) -> None:
         search_screen = self.query_one("#search-screen", SearchScreen)
@@ -344,25 +319,37 @@ class RootScreen(Screen):
         if added_count > 0:
             self._refresh_screens_after_draft_change()
         if added_count == 0:
-            hints = "No rows selected"
+            self._notify("No rows selected", "info")
         else:
-            hints = f"Added {added_count} item(s) to collection"
+            self._notify(f"Added {added_count} item(s) to collection", "success")
+
         self._set_mode_state(
             ModeState(
                 mode="NAV",
                 breadcrumb=self.mode_state.breadcrumb,
-                hints=hints,
+                hints=SEARCH_HINTS,
             )
         )
+
+    def _hints_for_breadcrumb(self, breadcrumb: str) -> str:
+        if breadcrumb == "Home":
+            return DEFAULT_HINTS
+        if "Collections" in breadcrumb:
+            return COLLECTIONS_HINTS
+        if "Import" in breadcrumb:
+            return IMPORT_HINTS
+        return SEARCH_HINTS
 
     def on_undo_requested(self, _: UndoRequested) -> None:
         undo_last()
         self._refresh_screens_after_draft_change()
+        self._notify("Undo last collection change", "info")
+        hints = self._hints_for_breadcrumb(self.mode_state.breadcrumb)
         self._set_mode_state(
             ModeState(
                 mode=self.mode_state.mode,
                 breadcrumb=self.mode_state.breadcrumb,
-                hints="Undo last collection change",
+                hints=hints,
             )
         )
 
@@ -527,11 +514,12 @@ class RootScreen(Screen):
         listing = search_screen.get_current_listing()
 
         if listing is None:
+            self._notify("No card selected for image.", "info")
             self._set_mode_state(
                 ModeState(
                     mode="NAV",
                     breadcrumb=self.mode_state.breadcrumb,
-                    hints="No card selected for image. " + SEARCH_HINTS,
+                    hints=SEARCH_HINTS,
                 )
             )
             return
@@ -539,22 +527,15 @@ class RootScreen(Screen):
         name = listing.name.split(" - ")[0]
 
         if not name:
+            self._notify("Selected row has no card name.", "info")
             self._set_mode_state(
                 ModeState(
                     mode="NAV",
                     breadcrumb=self.mode_state.breadcrumb,
-                    hints="Selected row has no card name. " + SEARCH_HINTS,
+                    hints=SEARCH_HINTS,
                 )
             )
             return
-
-        self._set_mode_state(
-            ModeState(
-                mode="NAV",
-                breadcrumb=self.mode_state.breadcrumb,
-                hints="Loading card image...",
-            )
-        )
 
         async def _load_and_show() -> None:
             try:
@@ -621,23 +602,18 @@ class RootScreen(Screen):
         changed = search_screen.next_page()
         state = search_screen.get_pagination_state()
 
-        if not changed:
-            if state is not None:
-                current, total = state
-                hints = f"Last page (Page {current}/{total}). " + SEARCH_HINTS
-            else:
-                hints = "Last page. " + SEARCH_HINTS
-        elif state is not None:
+        if not changed and state is not None:
             current, total = state
-            hints = f"Page {current}/{total}. " + SEARCH_HINTS
-        else:
-            hints = SEARCH_HINTS
+            self._notify(f"Last page (Page {current}/{total})", "info")
+        elif state is not None and changed:
+            current, total = state
+            self._notify(f"Page {current}/{total}", "info")
 
         self._set_mode_state(
             ModeState(
                 mode="NAV",
                 breadcrumb=self.mode_state.breadcrumb,
-                hints=hints,
+                hints=SEARCH_HINTS,
             )
         )
 
@@ -650,23 +626,18 @@ class RootScreen(Screen):
         changed = search_screen.previous_page()
         state = search_screen.get_pagination_state()
 
-        if not changed:
-            if state is not None:
-                current, total = state
-                hints = f"First page (Page {current}/{total}). " + SEARCH_HINTS
-            else:
-                hints = "First page. " + SEARCH_HINTS
-        elif state is not None:
+        if not changed and state is not None:
             current, total = state
-            hints = f"Page {current}/{total}. " + SEARCH_HINTS
-        else:
-            hints = SEARCH_HINTS
+            self._notify(f"First page (Page {current}/{total})", "info")
+        elif state is not None and changed:
+            current, total = state
+            self._notify(f"Page {current}/{total}", "info")
 
         self._set_mode_state(
             ModeState(
                 mode="NAV",
                 breadcrumb=self.mode_state.breadcrumb,
-                hints=hints,
+                hints=SEARCH_HINTS,
             )
         )
 

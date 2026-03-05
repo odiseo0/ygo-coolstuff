@@ -266,7 +266,7 @@ StatusBar {
 }
 
 #status-left {
-    width: 12;
+    width: 1fr;
     text-style: bold;
     color: #ffd75f;
 }
@@ -278,7 +278,7 @@ StatusBar {
 }
 
 #status-right {
-    width: 58;
+    width: 12;
     text-align: right;
     color: #4c4c40;
     text-wrap: nowrap;

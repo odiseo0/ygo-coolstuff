@@ -31,9 +31,6 @@ class CollectionsScreen(Container):
                 yield Static("Collections", classes="panel-title")
                 yield Static("Loading…", classes="muted", id="collections-list-status")
                 yield OptionList(id="collections-option-list")
-                yield Static(
-                    "Enter: load  n: new  r: rename  d: delete", classes="muted"
-                )
             with Container(classes="panel split-panel", id="collections-detail"):
                 yield Static(
                     "Details", classes="panel-title", id="collections-detail-title"

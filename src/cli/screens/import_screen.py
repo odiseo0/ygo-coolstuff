@@ -27,7 +27,6 @@ class ImportScreen(Container):
                 yield Static("Import (.txt / .ydk)", classes="panel-title")
                 yield Static("", id="import-list-status", classes="muted")
                 yield OptionList(id="import-file-list")
-                yield Static("Enter: import  Esc: back", classes="muted")
             with Container(classes="panel split-panel", id="import-preview"):
                 yield Static("Preview", classes="panel-title", id="import-preview-title")
                 yield Container(id="import-preview-content")

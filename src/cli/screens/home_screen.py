@@ -12,10 +12,9 @@ class HomeScreen(Container):
             with Horizontal(classes="columns"):
                 with Container(classes="panel column-panel column-panel-left"):
                     yield Static("Quick Actions", classes="panel-title")
-                    yield Static("s  Search", classes="list-item")
-                    yield Static("i  Import", classes="list-item")
-                    yield Static("c  Collections", classes="list-item")
-                    yield Static("?  Help", classes="list-item")
+                    yield Static("Search", classes="list-item")
+                    yield Static("Import", classes="list-item")
+                    yield Static("Collections", classes="list-item")
                 with Container(classes="panel column-panel column-panel-left"):
                     yield Static("Recent Collections", classes="panel-title")
                     yield Static("—", id="home-recent-collections", classes="list-item")

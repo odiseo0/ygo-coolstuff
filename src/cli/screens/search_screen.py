@@ -1,15 +1,13 @@
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
-from textual.widgets import Input, OptionList, Static
+from textual.widgets import DataTable, Input, OptionList, Static
 from textual.widgets.data_table import CellDoesNotExist, RowDoesNotExist
 from textual.widgets.option_list import Option
 
 from src.cli.ui.messages import SearchSubmitted
-from src.cli.widgets.results_table import ResultsTable
 from src.cli.widgets.search_input import SearchInput
 from src.models.cards import CardListing
-from src.utils.constants import SEARCH_RESULTS_PER_PAGE
 from src.usecases.collections import (
     add_items,
     adjust_quantity,
@@ -19,6 +17,7 @@ from src.usecases.collections import (
     make_collection_items_from_listings,
     remove_item,
 )
+from src.utils.constants import SEARCH_RESULTS_PER_PAGE
 
 
 ADDED_HIGHLIGHT_TTL = 2.0
@@ -37,7 +36,6 @@ class SearchScreen(Container):
         self._added_highlight_timer: object | None = None
         self._all_listings: list[CardListing] = []
         self._page_index: int = 0
-        self._footer_hints_id = "search-footer-hints"
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="split", id="search-split"):
@@ -48,20 +46,14 @@ class SearchScreen(Container):
                 yield SearchInput(placeholder="Dark Magician", id="search-input")
                 yield Static("Press Enter to search, / to edit query", classes="muted")
                 yield Static("", classes="spacer")
-                yield ResultsTable(id="results-table")
-                yield Static(
-                    "Space: select  a: add  ctrl+z: undo  u: image  +/-: qty",
-                    classes="muted",
-                    id=self._footer_hints_id,
-                )
+                yield DataTable(id="results-table")
             with Container(classes="panel split-panel", id="search-side"):
                 yield Static("Working Collection", classes="panel-title")
                 yield Static("", id="working-collection-name", classes="muted")
                 yield OptionList(id="working-collection-list")
-                yield Static("Ctrl+s: save  d: remove  e: rename", classes="muted")
 
     def on_mount(self) -> None:
-        table = self.query_one("#results-table", ResultsTable)
+        table = self.query_one("#results-table", DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = False
         table.add_column("Card Name", width=65)
@@ -84,12 +76,10 @@ class SearchScreen(Container):
         self._all_listings = list(listings)
         self._page_index = 0
         self._render_current_page()
-        self._update_footer_hints()
 
     def _render_current_page(self) -> None:
         if not self._all_listings:
             self._render_results([])
-            self._update_footer_hints()
             return
 
         start = self._page_index * SEARCH_RESULTS_PER_PAGE
@@ -101,10 +91,9 @@ class SearchScreen(Container):
         end = start + SEARCH_RESULTS_PER_PAGE
         page_listings = self._all_listings[start:end]
         self._render_results(page_listings)
-        self._update_footer_hints()
 
     def _render_results(self, listings: list[CardListing]) -> None:
-        table = self.query_one("#results-table", ResultsTable)
+        table = self.query_one("#results-table", DataTable)
         table.clear(columns=False)
         self._row_to_listing.clear()
         self._selected_row_keys.clear()
@@ -143,14 +132,15 @@ class SearchScreen(Container):
         if not self._all_listings:
             return False
 
-        total_pages = (len(self._all_listings) + SEARCH_RESULTS_PER_PAGE - 1) // SEARCH_RESULTS_PER_PAGE
+        total_pages = (
+            len(self._all_listings) + SEARCH_RESULTS_PER_PAGE - 1
+        ) // SEARCH_RESULTS_PER_PAGE
 
         if self._page_index + 1 >= total_pages:
             return False
 
         self._page_index += 1
         self._render_current_page()
-        self._update_footer_hints()
         return True
 
     def previous_page(self) -> bool:
@@ -162,37 +152,20 @@ class SearchScreen(Container):
 
         self._page_index -= 1
         self._render_current_page()
-        self._update_footer_hints()
         return True
 
     def get_pagination_state(self) -> tuple[int, int] | None:
         if not self._all_listings:
             return None
 
-        total_pages = (len(self._all_listings) + SEARCH_RESULTS_PER_PAGE - 1) // SEARCH_RESULTS_PER_PAGE
+        total_pages = (
+            len(self._all_listings) + SEARCH_RESULTS_PER_PAGE - 1
+        ) // SEARCH_RESULTS_PER_PAGE
 
         if total_pages <= 1:
             return None
 
         return self._page_index + 1, total_pages
-
-    def _update_footer_hints(self) -> None:
-        try:
-            footer = self.query_one(f"#{self._footer_hints_id}", Static)
-        except Exception:
-            return
-
-        base = "Space: select  a: add  ctrl+z: undo  u: image  +/-: qty"
-        state = self.get_pagination_state()
-
-        if state is None:
-            footer.update(base)
-            return
-
-        current, total = state
-        footer.update(
-            f"{base}  PgUp/PgDn or '['/']': page  (Page {current}/{total})"
-        )
 
     def _make_row_key(self, listing: CardListing) -> str:
         return f"{listing.code}:{listing.condition}"
@@ -241,7 +214,7 @@ class SearchScreen(Container):
         return tuple(Text(str(v), style=ADDED_HIGHLIGHT_STYLE) for v in values)
 
     def _update_row_cells(self, row_key: str, listing: CardListing) -> None:
-        table = self.query_one("#results-table", ResultsTable)
+        table = self.query_one("#results-table", DataTable)
         renderables = self._row_cell_renderables(row_key, listing)
 
         try:
@@ -314,7 +287,7 @@ class SearchScreen(Container):
             option_list.highlighted = 0
 
     def refresh_after_collection_change(self) -> None:
-        _ = self.query_one("#results-table", ResultsTable)
+        _ = self.query_one("#results-table", DataTable)
 
         for row_key, listing in self._row_to_listing.items():
             self._update_row_display(row_key, listing)
@@ -322,7 +295,7 @@ class SearchScreen(Container):
         self._render_working_collection()
 
     def toggle_current_row_selection(self) -> bool:
-        table = self.query_one("#results-table", ResultsTable)
+        table = self.query_one("#results-table", DataTable)
 
         if table.row_count == 0:
             return False
@@ -392,7 +365,7 @@ class SearchScreen(Container):
         return None
 
     def get_current_working_item_key(self) -> str | None:
-        table = self.query_one("#results-table", ResultsTable)
+        table = self.query_one("#results-table", DataTable)
 
         if table.row_count == 0:
             return None
@@ -418,7 +391,7 @@ class SearchScreen(Container):
         return row_key
 
     def get_current_listing(self) -> CardListing | None:
-        table = self.query_one("#results-table", ResultsTable)
+        table = self.query_one("#results-table", DataTable)
 
         if table.row_count == 0:
             return None
