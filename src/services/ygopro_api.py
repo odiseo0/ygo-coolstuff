@@ -1,3 +1,4 @@
+import time
 from collections.abc import Mapping, Sequence
 from typing import TypedDict
 from urllib.parse import quote_plus
@@ -5,6 +6,7 @@ from urllib.parse import quote_plus
 from httpx import AsyncClient, HTTPStatusError, RequestError
 
 from src.utils.constants import YGO_API_URL
+from src.utils.file_cache import load_cache_entry, save_cache_entry
 
 
 class YGOPROCardImage(TypedDict):
@@ -27,16 +29,87 @@ class YGROPROResponse(TypedDict):
     error: str | None = None
 
 
-async def fuzzy_search(query: str) -> list[YGROPROResponse]:
-    async with AsyncClient() as client:
-        response = await client.get(f"{YGO_API_URL}?fname=" + query.strip())
+_YGOPRO_CLIENT: AsyncClient | None = None
+YGOPRO_FUZZY_TTL_SECONDS = 900
+_YGOPRO_FUZZY_CACHE: dict[str, tuple[float, list[YGROPROResponse]]] = {}
+USE_YGOPRO_FILE_CACHE = False
 
-    return response.json()
+
+async def get_ygopro_client() -> AsyncClient:
+    global _YGOPRO_CLIENT
+
+    if _YGOPRO_CLIENT is None:
+        _YGOPRO_CLIENT = AsyncClient()
+
+    return _YGOPRO_CLIENT
+
+
+async def close_ygopro_client() -> None:
+    global _YGOPRO_CLIENT
+
+    if _YGOPRO_CLIENT is not None:
+        await _YGOPRO_CLIENT.aclose()
+        _YGOPRO_CLIENT = None
+
+
+async def fuzzy_search(query: str) -> list[YGROPROResponse]:
+    normalized_query = query.strip().lower()
+
+    if not normalized_query:
+        return []
+
+    now = time.monotonic()
+    cached = _YGOPRO_FUZZY_CACHE.get(normalized_query)
+
+    if cached is not None:
+        expires_at, cached_payload = cached
+
+        if expires_at > now:
+            return cached_payload
+
+    if USE_YGOPRO_FILE_CACHE:
+        file_payload = load_cache_entry("ygopro_fuzzy", normalized_query)
+
+        if file_payload is not None:
+            try:
+                cache_value = file_payload
+                _YGOPRO_FUZZY_CACHE[normalized_query] = (
+                    now + YGOPRO_FUZZY_TTL_SECONDS,
+                    cache_value,
+                )
+
+                return cache_value
+            except Exception:
+                pass
+
+    client = await get_ygopro_client()
+    response = await client.get(f"{YGO_API_URL}?fname={normalized_query}")
+    payload = response.json()
+
+    try:
+        cache_value: list[YGROPROResponse]
+
+        if isinstance(payload, list):
+            cache_value = payload
+        else:
+            cache_value = [payload]
+
+        _YGOPRO_FUZZY_CACHE[normalized_query] = (
+            now + YGOPRO_FUZZY_TTL_SECONDS,
+            cache_value,
+        )
+
+        if USE_YGOPRO_FILE_CACHE:
+            save_cache_entry("ygopro_fuzzy", normalized_query, cache_value)
+    except Exception:
+        return payload
+
+    return cache_value
 
 
 async def get_card_by_id(id: int) -> YGROPROResponse:
-    async with AsyncClient() as client:
-        response = await client.get(f"{YGO_API_URL}?id={id}")
+    client = await get_ygopro_client()
+    response = await client.get(f"{YGO_API_URL}?id={id}")
 
     return response.json()
 
@@ -54,10 +127,11 @@ async def get_cards_by_ids(ids: list[int]) -> list[YGOPROCard]:
 
     joined_ids = ",".join(str(id) for id in ids)
 
+    client = await get_ygopro_client()
+
     try:
-        async with AsyncClient() as client:
-            response = await client.get(f"{YGO_API_URL}?id={joined_ids}")
-            response.raise_for_status()
+        response = await client.get(f"{YGO_API_URL}?id={joined_ids}")
+        response.raise_for_status()
     except (HTTPStatusError, RequestError) as _:
         return []
 
@@ -88,10 +162,11 @@ async def get_card_image_url_by_name(name: str) -> str | None:
 
     encoded_name = quote_plus(query)
 
+    client = await get_ygopro_client()
+
     try:
-        async with AsyncClient() as client:
-            response = await client.get(f"{YGO_API_URL}?name={encoded_name}")
-            response.raise_for_status()
+        response = await client.get(f"{YGO_API_URL}?name={encoded_name}")
+        response.raise_for_status()
     except (HTTPStatusError, RequestError):
         return None
 

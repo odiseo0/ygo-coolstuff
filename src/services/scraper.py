@@ -1,23 +1,49 @@
 import asyncio
 import re
-from urllib.parse import quote, unquote
+import time
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote
 
 from bs4 import BeautifulSoup
 from httpx import AsyncClient, HTTPStatusError, RequestError
 
 from src.models.cards import CardListing
-from src.utils.constants import (
-    BASE_URL,
-    BASE_URL_SEARCH,
-    REQUEST_TIMEOUT_SECONDS,
-    SEARCH_DEFAULT_PAGE,
-    SEARCH_RESULTS_PER_PAGE,
-    USER_AGENT,
-)
-from src.utils.utils import deduplicate_listings
+from src.utils.constants import BASE_URL, REQUEST_TIMEOUT_SECONDS, USER_AGENT
+from src.utils.utils import deduplicate_listings, to_slug
 
 
-MAX_SCRAPE_CONCURRENCY = 10
+MAX_SCRAPE_CONCURRENCY = 20
+PARSE_MAX_WORKERS = 8
+CARD_LISTINGS_TTL_SECONDS = 600
+
+_SCRAPER_CLIENT: AsyncClient | None = None
+PARSE_EXECUTOR = ThreadPoolExecutor(max_workers=PARSE_MAX_WORKERS)
+_CARD_LISTINGS_CACHE: dict[str, tuple[float, list[CardListing]]] = {}
+
+
+async def get_scraper_client() -> AsyncClient:
+    global _SCRAPER_CLIENT
+
+    if _SCRAPER_CLIENT is None:
+        _SCRAPER_CLIENT = AsyncClient(
+            headers={"User-Agent": USER_AGENT},
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            follow_redirects=True,
+        )
+
+    return _SCRAPER_CLIENT
+
+
+async def close_scraper_client() -> None:
+    global _SCRAPER_CLIENT
+
+    if _SCRAPER_CLIENT is not None:
+        await _SCRAPER_CLIENT.aclose()
+        _SCRAPER_CLIENT = None
+
+
+def _card_cache_key(card_name: str) -> str:
+    return to_slug(card_name)
 
 
 async def scrape_cards(cards: list[str]) -> list[CardListing]:
@@ -26,158 +52,67 @@ async def scrape_cards(cards: list[str]) -> list[CardListing]:
     if not cards:
         return all_listings
 
-    async with AsyncClient(
-        headers={"User-Agent": USER_AGENT},
-        timeout=REQUEST_TIMEOUT_SECONDS,
-        follow_redirects=True,
-    ) as client:
-        semaphore = asyncio.Semaphore(MAX_SCRAPE_CONCURRENCY)
-        tasks: list[asyncio.Task] = []
-        card_names: list[str] = []
+    now = time.monotonic()
+    pending_cards: list[str] = []
 
-        async def _bounded_fetch(url: str) -> str | None:
-            async with semaphore:
-                return await fetch_card_page(client, url)
+    for card_name in cards:
+        key = _card_cache_key(card_name)
+        cached = _CARD_LISTINGS_CACHE.get(key)
 
-        for card_name in cards:
-            encoded_name = quote(card_name, safe="").replace("%20", "+")
-            url = f"{BASE_URL}{encoded_name}"
-            task = asyncio.create_task(_bounded_fetch(url))
-            tasks.append(task)
-            card_names.append(card_name)
+        if cached is None:
+            pending_cards.append(card_name)
+            continue
 
-        htmls = await asyncio.gather(*tasks)
+        expires_at, cached_listings = cached
 
-        for card_name, html in zip(card_names, htmls):
-            if html:
-                listings = parse_card_listings(html, card_name)
-                all_listings.extend(listings)
+        if expires_at <= now:
+            pending_cards.append(card_name)
+            continue
+
+        all_listings.extend(cached_listings)
+
+    if not pending_cards:
+        return all_listings
+
+    client = await get_scraper_client()
+    semaphore = asyncio.Semaphore(MAX_SCRAPE_CONCURRENCY)
+    tasks: list[asyncio.Task] = []
+    card_names: list[str] = []
+
+    async def _bounded_fetch(url: str) -> str | None:
+        async with semaphore:
+            return await fetch_card_page(client, url)
+
+    for card_name in pending_cards:
+        encoded_name = quote(card_name, safe="").replace("%20", "+")
+        url = f"{BASE_URL}{encoded_name}"
+        task = asyncio.create_task(_bounded_fetch(url))
+        tasks.append(task)
+        card_names.append(card_name)
+
+    htmls = await asyncio.gather(*tasks)
+
+    loop = asyncio.get_running_loop()
+
+    parse_tasks = [
+        loop.run_in_executor(PARSE_EXECUTOR, parse_card_listings, html, card_name)
+        for card_name, html in zip(card_names, htmls)
+        if html
+    ]
+
+    parsed_lists = await asyncio.gather(*parse_tasks)
+
+    now_after_parse = time.monotonic()
+
+    for card_name, listings in zip(card_names, parsed_lists):
+        key = _card_cache_key(card_name)
+        _CARD_LISTINGS_CACHE[key] = (
+            now_after_parse + CARD_LISTINGS_TTL_SECONDS,
+            listings,
+        )
+        all_listings.extend(listings)
 
     return all_listings
-
-
-async def fuzzy_search_cards(
-    query: str,
-    page: int = SEARCH_DEFAULT_PAGE,
-    results_per_page: int = SEARCH_RESULTS_PER_PAGE,
-) -> list[str]:
-    normalized_query = query.strip()
-
-    if not normalized_query:
-        return []
-
-    safe_page = max(page, 1)
-    safe_results = max(min(results_per_page, SEARCH_RESULTS_PER_PAGE), 1)
-
-    params = {
-        "pa": "searchOnName",
-        "page": str(safe_page),
-        "resultsPerPage": str(safe_results),
-        "q": normalized_query,
-    }
-
-    async with AsyncClient(
-        headers={"User-Agent": USER_AGENT},
-        timeout=REQUEST_TIMEOUT_SECONDS,
-        follow_redirects=True,
-    ) as client:
-        try:
-            response = await client.get(BASE_URL_SEARCH, params=params)
-            response.raise_for_status()
-        except (HTTPStatusError, RequestError):
-            return []
-
-    try:
-        html = response.text
-    except Exception:
-        return []
-
-    soup = BeautifulSoup(html, "html.parser")
-    names: set[str] = set()
-
-    for link in soup.find_all("a", href=True):
-        href = link["href"]
-
-        if "/p/YuGiOh/" not in href:
-            continue
-
-        text = link.get_text(strip=True)
-
-        if text:
-            names.add(text)
-
-    if not names:
-        title_elements = soup.select("div.products-container h3, div.products-container h2")
-
-        for title in title_elements:
-            text = title.get_text(strip=True)
-
-            if text:
-                names.add(text)
-
-    return sorted(names)
-
-
-async def scrape_search_results(
-    query: str,
-    page: int = SEARCH_DEFAULT_PAGE,
-    results_per_page: int = SEARCH_RESULTS_PER_PAGE,
-) -> list[CardListing]:
-    normalized_query = query.strip()
-
-    if not normalized_query:
-        return []
-
-    safe_page = max(page, 1)
-    safe_results = max(min(results_per_page, SEARCH_RESULTS_PER_PAGE), 1)
-
-    params = {
-        "pa": "searchOnName",
-        "page": str(safe_page),
-        "resultsPerPage": str(safe_results),
-        "q": normalized_query,
-    }
-
-    async with AsyncClient(
-        headers={"User-Agent": USER_AGENT},
-        timeout=REQUEST_TIMEOUT_SECONDS,
-        follow_redirects=True,
-    ) as client:
-        try:
-            response = await client.get(BASE_URL_SEARCH, params=params)
-            response.raise_for_status()
-        except (HTTPStatusError, RequestError):
-            return []
-
-    try:
-        html = response.text
-    except Exception:
-        return []
-
-    soup = BeautifulSoup(html, "html.parser")
-    candidate_names: set[str] = set()
-
-    for link in soup.find_all("a", href=True):
-        href = link["href"]
-
-        if "/p/YuGiOh/" not in href:
-            continue
-
-        try:
-            slug = href.split("/p/YuGiOh/", 1)[1]
-        except IndexError:
-            continue
-
-        decoded = unquote(slug)
-        name = decoded.replace("+", " ").strip()
-
-        if name:
-            candidate_names.add(name)
-
-    if not candidate_names:
-        return []
-
-    return await scrape_cards(sorted(candidate_names))
 
 
 def parse_listings_from_text(soup: BeautifulSoup, card_name: str) -> list[CardListing]:
@@ -338,6 +273,7 @@ async def fetch_card_page(client: AsyncClient, url: str) -> str | None:
     except HTTPStatusError as error:
         if error.response.status_code == 404:
             return None
+
         return None
     except RequestError:
         return None

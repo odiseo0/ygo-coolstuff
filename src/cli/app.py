@@ -48,7 +48,7 @@ from src.usecases.collections import (
     start_new_collection,
     undo_last,
 )
-from src.usecases.search_cards import search_cards_fuzzy
+from src.usecases.search_cards import search_cards
 from src.usecases.ydk_import import ImportDeckError, import_deck_file
 from src.utils.utils import sanitize_filename
 
@@ -140,8 +140,8 @@ class RootScreen(Screen):
         ("space", "toggle_select", "Select row"),
         Binding("escape", "blur_or_back", "Blur/Back", priority=True),
         Binding("ctrl+s", "save_working", "Save", priority=True),
-        Binding("+,plus,shift+equals,equals", "qty_up", "Qty +", priority=True),
-        Binding("-,minus", "qty_down", "Qty -", priority=True),
+        Binding("+,plus,shift+equals,equals", "qty_up", "Qty +"),
+        Binding("-,minus", "qty_down", "Qty -"),
         ("e", "rename_draft", "Rename draft"),
         ("d", "remove_or_delete", "Remove/Delete"),
         ("r", "rename_collection", "Rename collection"),
@@ -269,7 +269,7 @@ class RootScreen(Screen):
 
     async def on_search_submitted(self, message: SearchSubmitted) -> None:
         try:
-            listings = await search_cards_fuzzy(message.query)
+            listings = await search_cards(message.query)
         except Exception as e:
             self._notify(_user_message("Search", e), "error")
             self._set_mode_state(
