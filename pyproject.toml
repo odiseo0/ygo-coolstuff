@@ -50,7 +50,10 @@ where = ["."]
 include = ["src*"]
 
 [tool.setuptools.package-data]
-src = ["data/*.xlsx"]
+src = [
+    "data/*.xlsx",
+    "cli/app.tcss",
+]
 
 [tool.pdm]
 distribution = false

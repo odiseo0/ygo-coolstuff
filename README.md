@@ -48,6 +48,8 @@ One-liner from repo (Windows, Python 3.13): `py -3.13 -m pip install -e . && py 
 
 ### Imports
 - **Import .ydk files**: Press `i` to import a `.ydk` file and turn it into a collection you can review and edit.
+- You can also press `b` to open the file explorer and select the file
+- `o` to write the path
 
 ---
 
